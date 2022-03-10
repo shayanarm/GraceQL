@@ -1,8 +1,6 @@
-[0m[[0m[33mwarn[0m] [0m[0m[33m-- Unchecked Warning: /workspaces/scala3/src/main/scala/main.scala:13:15 -------[0m[0m
+[0m[[0m[33mwarn[0m] [0m[0m[33m-- Unchecked Warning: /workspaces/graceql/src/main/scala/main.scala:13:15 ------[0m[0m
 [0m[[0m[33mwarn[0m] [0m[0m[33m13 |[0m    (src ++ src).read[0m
 [0m[[0m[33mwarn[0m] [0m[0m   |               [33m^[0m[0m
 [0m[[0m[33mwarn[0m] [0m[0m   |               the type test for Seq[Int] cannot be checked at runtime[0m
-[0m[[0m[33mwarn[0m] [0m[0mone warning found[0m
-[0m[[0m[33mwarn[0m] [0m[0mone warning found[0m
 [0m[[0m[33mwarn[0m] [0m[0mone warning found[0m
 [0m[[0m[33mwarn[0m] [0m[0mone warning found[0m
