@@ -14,5 +14,6 @@ inline def let[A, B](i: A)(f: A => B) = f(i)
   }
 
   val s = summon[Foo[Int]].foo
+  
   s + 2
   println(ints.map(_ + 2))
