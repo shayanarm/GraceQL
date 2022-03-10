@@ -1,12 +1,19 @@
 *.class
 *.log
 .bloop/*
+.bloop
 .bsp/*
+.bsp
 .devcontainer/*
+.devcontainer
 .metals/*
+.metals
 .vscode/*
+.vscode
 .target/*
+.target
 project/*
+project
 !project/build.properties
 .scalafmt.conf
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
