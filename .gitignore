@@ -10,8 +10,8 @@
 .metals
 .vscode/*
 .vscode
-.target/*
-.target
+target/*
+target
 project/*
 project
 !project/build.properties
