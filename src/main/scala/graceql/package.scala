@@ -5,15 +5,9 @@ import graceql.typelevel.*
 import scala.compiletime.summonInline
 
 package object graceql {
-  transparent inline def context[R[_],M[_]](using inline ctx: Context[R,M])(inline query: SqlLike[R,M] ?=> Any): Any = 
-    ctx(query)
-
-  trait Foo[A] {
-    transparent inline def foo: Any
+  class CallProxy[R[_],M[_]] {
+    inline def apply[A](using ctx: Context[R,M])(inline query: SqlLike[R,M] ?=> A): ctx.Exe[A] = ctx.apply(query)
   }
-
-  object Foo {
-    given Foo[Int] with
-      transparent inline def foo: Any = 5   
-  }
+  transparent inline def context[R[_],M[_]]: CallProxy[R, M] = CallProxy[R,M]()
+    
 }
