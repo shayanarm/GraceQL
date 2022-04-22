@@ -7,6 +7,8 @@ import scala.reflect.TypeTest
 import scala.collection.IterableFactory
 import scala.collection.SeqFactory
 import scala.collection.SeqFactory.Delegate
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 
 final type Memory[+A]
 
@@ -16,6 +18,7 @@ object IterableFactoryWrapper {
   implicit val seqFactory: IterableFactoryWrapper[Seq] = Seq
   implicit val listFactory: IterableFactoryWrapper[List] = List
   implicit val vectorFactory: IterableFactoryWrapper[Vector] = Vector  
+  implicit val lazyListFactory: IterableFactoryWrapper[LazyList] = LazyList  
 }
 
 object Memory {
@@ -75,9 +78,9 @@ object Memory {
         }
         new scala.collection.IterableOps.WithFilter[A,M](iterOps,pred)
 
-      def leftJoin[B](mb: M[B], on: (A, B) => Boolean): M[(A, Option[B])] = ???
+      def leftJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(A, Option[B])] = ???
 
-      def fullJoin[B](mb: M[B], on: (A, B) => Boolean): M[Ior[A, B]] = ???
+      def fullJoin[B](mb: M[B])(on: (A, B) => Boolean): M[Ior[A, B]] = ???
 
       def distinct: M[A] = ma.mapValues(vs => ifac.from(vs.to(Seq).distinct))
 
@@ -99,7 +102,12 @@ object Memory {
   }
 
   given memory[S[X] <: Iterable[X]](using sl: SqlLike[Memory,S]): Context[Memory,S] with
-    type Compiled[A] = A
-    inline def compile[A](inline query: SqlLike[Memory, S] ?=> A): A = 
+    type Compiled[A] = () => A
+
+    type Connection = DummyImplicit
+
+    given runSync[A]: Run[[x] =>> x, A] with
+      def apply(compiled: Compiled[A], conn: Connection): A = compiled()
+    inline def compile[A](inline query: SqlLike[Memory, S] ?=> A): () => A = 
       ${ Compiler.compile[A]('{query(using sl)}) }
 }

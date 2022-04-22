@@ -7,9 +7,7 @@ import graceql.data.Source
 import graceql.backend.memory.*
 
 object Compiler {
-  def compile[A](e: Expr[A])(using q: Quotes, ta: Type[A]): Expr[A] = 
-    import quotes.reflect.*
-    println(e.asTerm.show(using Printer.TreeAnsiCode))
-    e
+  def compile[A](e: Expr[A])(using q: Quotes, ta: Type[A]): Expr[() => A] = 
+    '{() => $e}
 }
 
