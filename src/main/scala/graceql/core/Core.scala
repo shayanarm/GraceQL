@@ -6,6 +6,7 @@ import graceql.annotation.terminal
 import scala.annotation.targetName
 import scala.reflect.TypeTest
 import scala.concurrent.Future
+import scala.concurrent.ExecutionContext
 import scala.compiletime.summonInline
 
 trait SqlLike[R[_], M[_]] extends Queryable[[x] =>> Source[R, M, x]]:
@@ -52,6 +53,10 @@ trait Context[R[_], M[_]]:
   trait Run[C[_], A]:
     def apply(compiled: Compiled[A], conn: Connection): C[A]
 
+  object Run:
+    given runFuture[A](using run: Run[[x] =>> x, A], ec: ExecutionContext): Run[Future, A] with
+      def apply(compiled: Compiled[A], conn: Connection): Future[A] = Future{run(compiled,conn)}
+        
   trait RunTransform[D[_], A]:
     def apply(compiled: Compiled[M[A]], conn: Connection): D[A]
 
@@ -60,20 +65,20 @@ trait Context[R[_], M[_]]:
       def apply(compiled: Compiled[M[A]], conn: Connection): M[A] = 
         run(compiled, conn)
 
-  inline def run[C[_], A](compiled: Compiled[A]): C[A] =
-    summonInline[Run[C, A]].apply(compiled, summonInline[Connection])
+  inline def run[C[_], A](compiled: Compiled[A])(using conn: Connection): C[A] =
+    summonInline[Run[C, A]].apply(compiled, conn)
 
-  inline def runTransform[D[_], A](compiled: Compiled[M[A]]): D[A] =
-    summonInline[RunTransform[D, A]].apply(compiled, summonInline[Connection])
+  inline def runTransform[D[_], A](compiled: Compiled[M[A]])(using conn: Connection): D[A] =
+    summonInline[RunTransform[D, A]].apply(compiled, conn)
  
   final class Exe[A](val compiled: Compiled[A]):
     type RowType = A match
       case M[a] => a
       case _ => A
-    inline def runAs[C[_]]: C[A] = self.run[C, A](compiled)
-    inline def run(): A = runAs[[x] =>> x]
-    inline def future(): Future[A] = runAs[Future]
-    inline def transform[D[_]](using eq: A =:= M[RowType]): D[RowType] = 
+    inline def runAs[C[_]]()(using conn: Connection): C[A] = self.run[C, A](compiled)
+    inline def run()(using conn: Connection): A = runAs[[x] =>> x]()
+    inline def future()(using conn: Connection): Future[A] = runAs[Future]()
+    inline def transform[D[_]](using eq: A =:= M[RowType], conn: Connection): D[RowType] = 
       self.runTransform[D, RowType](eq.liftCo[Compiled](compiled))
                  
   inline def apply[A](inline query: SqlLike[R, M] ?=> A): Exe[A] =
