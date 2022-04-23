@@ -8,6 +8,7 @@ import scala.reflect.TypeTest
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import scala.compiletime.summonInline
+import scala.concurrent.Promise
 
 trait SqlLike[R[_], M[_]] extends Queryable[[x] =>> Source[R, M, x]]:
 
@@ -52,11 +53,16 @@ trait Context[R[_], M[_]]:
 
   trait Run[C[_], A]:
     def apply(compiled: Compiled[A], conn: Connection): C[A]
-
+  
   object Run:
     given runFuture[A](using run: Run[[x] =>> x, A], ec: ExecutionContext): Run[Future, A] with
-      def apply(compiled: Compiled[A], conn: Connection): Future[A] = Future{run(compiled,conn)}
-        
+      def apply(compiled: Compiled[A], conn: Connection): Future[A] = 
+        Future{run(compiled,conn)}
+
+    given runPromise[A](using run: Run[Future, A]): Run[Promise, A] with
+      def apply(compiled: Compiled[A], conn: Connection): Promise[A] = 
+        Promise[A].completeWith(run(compiled,conn))
+
   trait RunTransform[D[_], A]:
     def apply(compiled: Compiled[M[A]], conn: Connection): D[A]
 
@@ -78,8 +84,13 @@ trait Context[R[_], M[_]]:
     inline def runAs[C[_]]()(using conn: Connection): C[A] = self.run[C, A](compiled)
     inline def run()(using conn: Connection): A = runAs[[x] =>> x]()
     inline def future()(using conn: Connection): Future[A] = runAs[Future]()
-    inline def transform[D[_]](using eq: A =:= M[RowType], conn: Connection): D[RowType] = 
+    inline def promise()(using conn: Connection): Promise[A] = runAs[Promise]()
+    inline def transform[D[_]]()(using eq: A =:= M[RowType], conn: Connection): D[RowType] = 
       self.runTransform[D, RowType](eq.liftCo[Compiled](compiled))
+    inline def lazyList()(using eq: A =:= M[RowType], conn: Connection): LazyList[RowType] = 
+      transform[LazyList]()      
+    inline def stream()(using eq: A =:= M[RowType], conn: Connection): LazyList[RowType] =
+      lazyList()
                  
   inline def apply[A](inline query: SqlLike[R, M] ?=> A): Exe[A] =
     Exe(compile(query))
@@ -91,4 +102,4 @@ trait MappedContext[R[_], M2[_], M1[_]](using val baseCtx: Context[R,M1]) extend
   def mapCapability(sl: SqlLike[R, M1]): SqlLike[R,M2]
   inline def mapCompiled[A](inline exe: baseCtx.Compiled[A]): Compiled[A]
   inline def compile[A](inline query: SqlLike[R, M2] ?=> A): Compiled[A] =
-    mapCompiled(baseCtx.compile {sl ?=> query(using mapCapability(sl)) })
+    mapCompiled(baseCtx.compile {sl ?=> query(using mapCapability(sl)) }) 
