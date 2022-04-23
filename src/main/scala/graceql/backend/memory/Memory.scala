@@ -106,8 +106,9 @@ object Memory {
 
     type Connection = DummyImplicit
 
-    given runSync[A]: Run[[x] =>> x, A] with
+    given runSync[A]: Run[A, A] with
       def apply(compiled: Compiled[A], conn: Connection): A = compiled()
+      def lift(a: A) = a
     inline def compile[A](inline query: SqlLike[Memory, S] ?=> A): () => A = 
       ${ Compiler.compile[A]('{query(using sl)}) }
 }

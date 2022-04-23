@@ -51,42 +51,39 @@ trait Context[R[_], M[_]]:
 
   type Connection
 
-  trait Run[C[_], A]:
-    def apply(compiled: Compiled[A], conn: Connection): C[A]
+  trait Run[A, B]:
+    def apply(compiled: Compiled[A], conn: Connection): B
+    def lift(a: A): B
   
   object Run:
-    given runFuture[A](using run: Run[[x] =>> x, A], ec: ExecutionContext): Run[Future, A] with
+    given runFuture[A](using run: Run[A, A], ec: ExecutionContext): Run[A, Future[A]] with
       def apply(compiled: Compiled[A], conn: Connection): Future[A] = 
         Future{run(compiled,conn)}
+      def lift(a: A) = Future.successful(a)  
 
-    given runPromise[A](using run: Run[Future, A]): Run[Promise, A] with
+    given runPromise[A](using run: Run[A, Future[A]]): Run[A, Promise[A]] with
       def apply(compiled: Compiled[A], conn: Connection): Promise[A] = 
         Promise[A].completeWith(run(compiled,conn))
+      def lift(a: A) = Promise.successful(a)
+    
+    given runNested[A, FA, G[_]](using runf: Run[A, FA], rung: Run[FA,G[FA]]): Run[A, G[FA]] with
+      def apply(compiled: Compiled[A], conn: Connection): G[FA] = 
+        rung.lift(runf(compiled,conn))
+      def lift(a: A) = rung.lift(runf.lift(a))
 
-  trait RunTransform[D[_], A]:
-    def apply(compiled: Compiled[M[A]], conn: Connection): D[A]
-
-  object RunTransform:
-    given identityTransform[A](using run: Run[[x] =>> x, M[A]]): RunTransform[M,A] with
-      def apply(compiled: Compiled[M[A]], conn: Connection): M[A] = 
-        run(compiled, conn)
-
-  inline def run[C[_], A](compiled: Compiled[A])(using conn: Connection): C[A] =
-    summonInline[Run[C, A]].apply(compiled, conn)
-
-  inline def runTransform[D[_], A](compiled: Compiled[M[A]])(using conn: Connection): D[A] =
-    summonInline[RunTransform[D, A]].apply(compiled, conn)
+  inline def run[A, B](compiled: Compiled[A])(using conn: Connection): B =
+    summonInline[Run[A,B]].apply(compiled, conn)
  
   final class Exe[A](val compiled: Compiled[A]):
     type RowType = A match
       case M[a] => a
       case _ => A
-    inline def runAs[C[_]]()(using conn: Connection): C[A] = self.run[C, A](compiled)
+    inline def runAs[C[_]]()(using conn: Connection): C[A] = self.run[A,C[A]](compiled)
     inline def run()(using conn: Connection): A = runAs[[x] =>> x]()
     inline def future()(using conn: Connection): Future[A] = runAs[Future]()
     inline def promise()(using conn: Connection): Promise[A] = runAs[Promise]()
     inline def transform[D[_]]()(using eq: A =:= M[RowType], conn: Connection): D[RowType] = 
-      self.runTransform[D, RowType](eq.liftCo[Compiled](compiled))
+      self.run[M[RowType], D[RowType]](eq.liftCo[Compiled](compiled))
     inline def lazyList()(using eq: A =:= M[RowType], conn: Connection): LazyList[RowType] = 
       transform[LazyList]()      
     inline def stream()(using eq: A =:= M[RowType], conn: Connection): LazyList[RowType] =
