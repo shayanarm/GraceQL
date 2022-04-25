@@ -1,4 +1,4 @@
-package graceql.backend.troll
+package graceql.context.troll
 
 import scala.quoted.*
 import graceql.compiler.Util

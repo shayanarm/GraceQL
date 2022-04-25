@@ -1,8 +1,8 @@
-package graceql.backend.troll
+package graceql.context.troll
 
 import scala.quoted.*
 import graceql.core.*
-import graceql.backend.troll.Compiler
+import graceql.context.troll.Compiler
 
 type troll
 

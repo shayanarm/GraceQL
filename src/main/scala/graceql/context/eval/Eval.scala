@@ -1,7 +1,7 @@
-package graceql.backend.memory
+package graceql.context.eval
 
 import graceql.core.*
-import graceql.backend.memory.Compiler
+import graceql.context.eval.Compiler
 import graceql.data.*
 import scala.reflect.TypeTest
 import scala.collection.IterableFactory
@@ -10,7 +10,7 @@ import scala.collection.SeqFactory.Delegate
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
-final type Memory[+A]
+final type Eval[+A]
 
 opaque type IterableFactoryWrapper[S[X] <: Iterable[X]] = IterableFactory[S]
 
@@ -21,23 +21,23 @@ object IterableFactoryWrapper {
   implicit val lazyListFactory: IterableFactoryWrapper[LazyList] = LazyList  
 }
 
-object Memory {
+object Eval {
 
-  extension [M[_], A](ma: Source[Memory, M, A])
+  extension [M[_], A](ma: Source[Eval, M, A])
     private inline def mapValues[B](f: M[A] => M[B]) =
       Source.Values(ma.withValues(f))
     private inline def withValues[B](f: M[A] => B): B = f(
       ma.asInstanceOf[Source.Values[M, A]].values
     )
 
-  given memoryIterable[S[X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): SqlLike[Memory, S] with { self =>
-    private type M[A] = Source[Memory, S, A]
+  given EvalIterable[S[X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): SqlLike[Eval, S] with { self =>
+    private type M[A] = Source[Eval, S, A]
+
     type WriteResult = Int
+
     extension [A](ma: M[A])
       override def map[B](f: A => B): M[B] =
         ma.mapValues(v => ifac.from(v.map(f)))
-
-      // override def ap[B](f: M[A => B]): M[B] = ???
 
       def flatMap[B](f: A => M[B]): M[B] =
         ma.mapValues { vs =>
@@ -92,23 +92,22 @@ object Memory {
     extension [A](a: A) 
       @scala.annotation.nowarn def read: Read[A] = a match
         case s: (k, g) => (s._1, s._2.read)
-        case s: Source[Memory, S, x] => ifac.from(s.asInstanceOf[Source.Values[S,x]].values.map(_.read))
+        case s: Source[Eval, S, x] => ifac.from(s.asInstanceOf[Source.Values[S,x]].values.map(_.read))
         case s: _ => s
 
-    extension [A](ref: Memory[A])
+    extension [A](ref: Eval[A])
       def insertMany(a: M[A]): Int = ???
       def update(predicate: A => Boolean)(a: A => A): Int = ???
       def delete(a: A => Boolean): Int = ???
   }
 
-  given memory[S[X] <: Iterable[X]](using sl: SqlLike[Memory,S]): Context[Memory,S] with
+  given evalContext[S[X] <: Iterable[X]](using sl: SqlLike[Eval,S]): Context[Eval,S] with
     type Compiled[A] = () => A
 
     type Connection = DummyImplicit
 
-    given runSync[A]: Run[A, A] with
+    given execSync[A]: Execute[A, A] with
       def apply(compiled: Compiled[A], conn: Connection): A = compiled()
-      def lift(a: A) = a
-    inline def compile[A](inline query: SqlLike[Memory, S] ?=> A): () => A = 
+    inline def compile[A](inline query: SqlLike[Eval, S] ?=> A): () => A = 
       ${ Compiler.compile[A]('{query(using sl)}) }
 }

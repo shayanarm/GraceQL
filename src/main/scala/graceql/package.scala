@@ -1,13 +1,21 @@
 import scala.quoted.*
 import graceql.core.*
-import graceql.compiler.Util
-import graceql.typelevel.*
+import graceql.data.{MonadError, RunIn}
 import scala.compiletime.summonInline
 
 package object graceql {
-  class CallProxy[R[_],M[_]] {
-    inline def apply[A](using ctx: Context[R,M])(inline query: SqlLike[R,M] ?=> A): ctx.Exe[A] = ctx.apply(query)
-  }
-  transparent inline def context[R[_],M[_]]: CallProxy[R, M] = CallProxy[R,M]()
-    
+
+  extension [C](connection: C)
+    def transaction[T[_]](using
+        acid: ACID[C],
+        run: RunIn[T],
+        me: MonadError[T]
+    ): Transaction[T,C,Nothing] =
+      Transaction.Continuation(
+        () => acid.session(connection),
+        c => run(() => acid.open(c)),
+        c => run(() => acid.commit(c)),
+        c => run(() => acid.rollback(c)),
+        me
+      )
 }

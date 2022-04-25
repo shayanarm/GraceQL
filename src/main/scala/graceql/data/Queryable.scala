@@ -1,45 +1,5 @@
 package graceql.data
 
-trait Functor[M[_]]:
-  extension [A](ma: M[A]) def map[B](f: A => B): M[B]
-
-trait Applicative[M[_]] extends Functor[M]:
-  extension [A](a: A) @`inline` def pure: M[A]
-
-  extension [A](ma: M[A])
-
-    def ap[B](f: M[A => B]): M[B]
-
-    inline def <*>[B](f: M[A => B]): M[B] = ap(f)
-    def map[B](f: A => B): M[B] =
-      ma <*> f.pure
-
-trait Monad[M[_]] extends Applicative[M]:
-  extension [A](ma: M[A])
-
-    def flatMap[B](f: A => M[B]): M[B]
-
-    inline def >>=[B](f: A => M[B]): M[B] = flatMap(f)
-
-    inline def bind[B](f: A => M[B]): M[B] = flatMap(f)
-    def ap[B](mf: M[A => B]): M[B] = mf.flatMap(ma.map)
-
-trait MonadPlus[M[_]] extends Monad[M]:
-  extension [A](ma: M[A])
-
-    def concat(other: M[A]): M[A]
-
-    inline def union(other: M[A]): M[A] = concat(other)
-    
-    inline def ++(other: M[A]): M[A] = concat(other)
-
-trait MonadZero[M[_]] extends Monad[M]:
-  extension [A](ma: M[A])
-
-    def filter(pred: A => Boolean): M[A]
-
-    def withFilter(pred: A => Boolean): scala.collection.WithFilter[A,M]
-
 trait Queryable[M[_]] extends MonadZero[M] with MonadPlus[M]:
   extension [A](ma: M[A])
 
