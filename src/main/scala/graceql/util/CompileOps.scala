@@ -1,8 +1,8 @@
-package graceql.compiler
+package graceql.util
 
 import scala.quoted.*
 
-object Util {
+object CompileOps {
 
   def betaReduceAll(using q: Quotes)(e: q.reflect.Term): q.reflect.Term =
     import q.reflect.*

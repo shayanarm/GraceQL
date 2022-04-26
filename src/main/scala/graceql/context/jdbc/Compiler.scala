@@ -1,10 +1,10 @@
-package graceql.context.troll
+package graceql.context.jdbc
 
 import scala.quoted.*
-import graceql.compiler.Util
+import graceql.util.CompileOps
 
 object Compiler {
-  import Util.*
+  import CompileOps.*
   def compile(e: Expr[Any])(using q: Quotes): Expr[Any] =
     import q.reflect.*
     val pipe =
