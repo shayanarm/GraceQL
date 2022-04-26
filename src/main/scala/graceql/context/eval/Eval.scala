@@ -3,12 +3,7 @@ package graceql.context.eval
 import graceql.core.*
 import graceql.context.eval.Compiler
 import graceql.data.*
-import scala.reflect.TypeTest
 import scala.collection.IterableFactory
-import scala.collection.SeqFactory
-import scala.collection.SeqFactory.Delegate
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
 
 final type Eval[+A]
 

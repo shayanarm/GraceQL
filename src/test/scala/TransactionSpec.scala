@@ -1,4 +1,3 @@
-import graceql.context.troll.*
 import scala.quoted.*
 import graceql.*
 import graceql.context.eval.*
@@ -16,7 +15,7 @@ import matchers._
 import java.util.concurrent.TimeUnit
 
 class TransactionSpec extends AnyFlatSpec with should.Matchers {
-  
+
   val conn = summon[DummyImplicit]
   val trans =
     for
