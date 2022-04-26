@@ -1,15 +1,12 @@
 package graceql.core
 
-import scala.quoted.*
 import graceql.data.*
 import graceql.annotation.terminal
 import scala.annotation.targetName
-import scala.reflect.TypeTest
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import scala.compiletime.summonInline
 import scala.concurrent.Promise
-import graceql.data.{Applicative, MonadError}
 import scala.util.Try
 
 trait SqlLike[R[_], M[_]] extends Queryable[[x] =>> Source[R, M, x]]:
