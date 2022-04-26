@@ -83,37 +83,37 @@ object MonadError:
         def recoverWith(f: Throwable => Either[Throwable, A]): Either[Throwable, A] = 
           ma.left.flatMap[Throwable,A](f)
 
-trait RunIn[M[_]]:
+trait RunLifted[M[_]]:
   def apply[A](a: () => A): M[A]
 
-object RunIn:
+object RunLifted:
 
-  given identityRun: RunIn[[x] =>> x] with
+  given identityRun: RunLifted[[x] =>> x] with
     
     def apply[A](a: () => A): A = a()
 
   given runFuture[A](using
       ec: ExecutionContext
-  ): RunIn[Future] with
+  ): RunLifted[Future] with
     def apply[A](a: () => A): Future[A] =
       Future { a() }
 
-  given runPromise[A](using run: RunIn[Future]): RunIn[Promise] with
+  given runPromise[A](using run: RunLifted[Future]): RunLifted[Promise] with
     def apply[A](a: () => A): Promise[A] =
       Promise[A].completeWith(run(a))
 
-  given runTry[A]: RunIn[Try] with
+  given runTry[A]: RunLifted[Try] with
     def apply[A](a: () => A): Try[A] =
       Try { a() }
 
   given runOption[A](using
-      run: RunIn[Try]
-  ): RunIn[Option] with
+      run: RunLifted[Try]
+  ): RunLifted[Option] with
     def apply[A](a: () => A): Option[A] =
       run(a).toOption
 
   given runEither[A](using
-      run: RunIn[Try]
-  ): RunIn[[x] =>> Either[Throwable, x]] with
+      run: RunLifted[Try]
+  ): RunLifted[[x] =>> Either[Throwable, x]] with
     def apply[A](a: () => A): Either[Throwable, A] =
       run(a).toEither

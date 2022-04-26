@@ -53,7 +53,7 @@ trait Execute[R[_], Compiled[_], Connection ,A , B]:
 object Execute:
   given execLifted[R[_], Compiled[_], Connection, A, B, G[_]](using
       execUnlifted: Execute[R, Compiled, Connection, A, B],
-      run: RunIn[G]
+      run: RunLifted[G]
   ): Execute[R, Compiled, Connection, A, G[B]] with
     def apply(compiled: Compiled[A], conn: Connection): G[B] =
       run(() => execUnlifted(compiled, conn))  
@@ -131,7 +131,7 @@ object Transaction:
   extension [C](connection: C)
     def transaction[T[_]](using
         acid: ACID[C],
-        run: RunIn[T],
+        run: RunLifted[T],
         me: MonadError[T]
     ): Transaction[T, C, Nothing] =
       Transaction.Continuation(
