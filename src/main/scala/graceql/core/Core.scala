@@ -50,6 +50,17 @@ class GraceException(val message: String = null, val cause: Throwable = null)
   def this(message: String) = this(message, null)
   def this(cause: Throwable) = this(null, cause)
 
+trait Execute[R[_], Compiled[_], Connection ,A , B]:
+    def apply(compiled: Compiled[A], conn: Connection): B
+
+object Execute:
+  given execLifted[R[_], Compiled[_], Connection, A, B, G[_]](using
+      execUnlifted: Execute[R, Compiled, Connection, A, B],
+      run: RunIn[G]
+  ): Execute[R, Compiled, Connection, A, G[B]] with
+    def apply(compiled: Compiled[A], conn: Connection): G[B] =
+      run(() => execUnlifted(compiled, conn))  
+
 trait Context[R[_], M[_]]:
   self =>
 
@@ -57,16 +68,7 @@ trait Context[R[_], M[_]]:
 
   type Connection
 
-  trait Execute[A, B]:
-    def apply(compiled: Compiled[A], conn: Connection): B
-
-  object Execute:
-    given execContexed[A, B, G[_]](using
-        execSync: Execute[A, B], 
-        run: RunIn[G],
-    ): Execute[A, G[B]] with
-      def apply(compiled: Compiled[A], conn: Connection): G[B] =
-        run(() => execSync(compiled, conn))
+  final type Execute[A,B] = graceql.core.Execute[R, Compiled, Connection, A, B]
 
   inline def as[A, B](compiled: Compiled[A])(using conn: Connection): B =
     summonInline[Execute[A, B]].apply(compiled, conn)
@@ -75,28 +77,20 @@ trait Context[R[_], M[_]]:
     type RowType = A match
       case M[a] => a
       case _    => A
-    inline def as[C[_]](using conn: Connection): C[A] =
+    inline def as[C[_]](using Connection): C[A] =
       self.as[A, C[A]](compiled)
-    inline def run(using conn: Connection): A = as[[x] =>> x]
-    inline def future(using conn: Connection): Future[A] = as[Future]
-    inline def promise(using conn: Connection): Promise[A] = as[Promise]
-    inline def asTry(using conn: Connection): Try[A] = as[Try]
-    inline def option(using conn: Connection): Option[A] = as[Option]
-    inline def either(using conn: Connection): Either[Throwable,A] = as[[x] =>> Either[Throwable,x]]
-    inline def transform[D[_]](using
-        eq: A =:= M[RowType],
-        conn: Connection
-    ): D[RowType] =
+    inline def run(using Connection): A = as[[x] =>> x]
+    inline def future(using Connection): Future[A] = as[Future]
+    inline def promise(using Connection): Promise[A] = as[Promise]
+    inline def asTry(using Connection): Try[A] = as[Try]
+    inline def option(using Connection): Option[A] = as[Option]
+    inline def either(using Connection): Either[Throwable, A] =
+      as[[x] =>> Either[Throwable, x]]
+    inline def transform[D[_]](using Connection)(using eq: A =:= M[RowType]): D[RowType] =
       self.as[M[RowType], D[RowType]](eq.liftCo[Compiled](compiled))
-    inline def lazyList(using
-        eq: A =:= M[RowType],
-        conn: Connection
-    ): LazyList[RowType] =
+    inline def lazyList(using Connection)(using A =:= M[RowType]): LazyList[RowType] =
       transform[LazyList]
-    inline def stream(using
-        eq: A =:= M[RowType],
-        conn: Connection
-    ): LazyList[RowType] =
+    inline def stream(using Connection)(using A =:= M[RowType]): LazyList[RowType] =
       lazyList
 
   inline def apply[A](inline query: SqlLike[R, M] ?=> A): Exe[A] =
@@ -137,67 +131,74 @@ object Transaction:
   ) extends Transaction[T, C, Nothing]:
     lazy val session = sessionFactory()
 
-  def concludedException = new GraceException("Transaction already concluded")
-
-  extension[T[_],C](tr: Transaction[T,C,Nothing])
+  extension [C](connection: C)
+    def transaction[T[_]](using
+        acid: ACID[C],
+        run: RunIn[T],
+        me: MonadError[T]
+    ): Transaction[T, C, Nothing] =
+      Transaction.Continuation(
+        () => acid.session(connection),
+        c => run(() => acid.open(c)),
+        c => run(() => acid.commit(c)),
+        c => run(() => acid.rollback(c)),
+        me
+      )
+  extension [T[_], C](tr: Transaction[T, C, Nothing])
     final def apply[A](block: C ?=> T[A]): T[A] = tr match
-        case conn @ Continuation(_, open, commit, rollback, me) =>
-          given MonadError[T] = me
-          for
-            _ <- open(conn.session)
-            thunk = for
-              r <- block(using conn.session)
-              _ <- commit(conn.session)
-            yield r
-            r <- thunk.recoverWith { e =>
-              for
-                _ <- rollback(conn.session)
-                a <- me.raiseError[A](e)
-              yield a
-            }
+      case conn @ Continuation(_, open, commit, rollback, me) =>
+        given MonadError[T] = me
+        for
+          _ <- open(conn.session)
+          thunk = for
+            r <- block(using conn.session)
+            _ <- commit(conn.session)
           yield r
-    final def map[A](f: C => T[A]): Transaction[T, Nothing, A] = Conclusion(
-      () => apply(s ?=> f(s))
-    )
-    def withFilter(pred: C => Boolean): Transaction[T, C, Nothing] = tr match
-      case conn @ Continuation(_, _, _, _, me) =>
-        pred(conn.session) match
-          case true => tr
-          case false =>
-            Conclusion(
-              () => me.raiseError(
-                new NoSuchElementException(
-                  "Transaction.withFilter predicate is not satisfied"
-                )
+          r <- thunk.recoverWith { e =>
+            for
+              _ <- rollback(conn.session)
+              a <- me.raiseError[A](e)
+            yield a
+          }
+        yield r
+    final def map[A](f: C => T[A]): Transaction[T, Nothing, A] =
+      Conclusion(() => apply(s ?=> f(s)))
+    final def withFilter(pred: C => Boolean): Transaction[T, C, Nothing] =
+      tr match
+        case conn @ Continuation(_, _, _, _, me) =>
+          pred(conn.session) match
+            case true => tr
+            case false =>
+              throw new NoSuchElementException(
+                "Transaction.withFilter predicate is not satisfied. Also, this method should not be called"
               )
-            ).asInstanceOf[Transaction[T, C, Nothing]]
     final def flatMap[C2, A](
         f: C => Transaction[T, C2, A]
     ): Transaction[T, C2, A] = tr match
-        case conn @ Continuation(_, o1, c1, rb1, me) =>
-          given MonadError[T] = me
-          f(conn.session) match
-            case Conclusion(thunk) => 
-              Conclusion(() => apply(_ ?=> thunk()))
-            case Continuation(f2, o2, c2, rb2, _) =>
-              Continuation(
-                f2,
-                s2 =>
-                  for
-                    _ <- o1(conn.session)
-                    _ <- o2(s2)
-                  yield (),
-                s2 =>
-                  for
-                    _ <- c2(s2)
-                    _ <- c1(conn.session)
-                  yield (),
-                s2 =>
-                  for
-                    _ <- rb2(s2)
-                    _ <- rb1(conn.session)
-                  yield (),
-                me
-              )      
-  extension[T[_],A](tr: Transaction[T, Nothing, A])
-    def run(): T[A] = tr.asInstanceOf[Transaction.Conclusion[T, A]].run()   
+      case conn @ Continuation(_, o1, c1, rb1, me) =>
+        given MonadError[T] = me
+        f(conn.session) match
+          case Conclusion(thunk) =>
+            Conclusion(() => apply(_ ?=> thunk()))
+          case Continuation(f2, o2, c2, rb2, _) =>
+            Continuation(
+              f2,
+              s2 =>
+                for
+                  _ <- o1(conn.session)
+                  _ <- o2(s2)
+                yield (),
+              s2 =>
+                for
+                  _ <- c2(s2)
+                  _ <- c1(conn.session)
+                yield (),
+              s2 =>
+                for
+                  _ <- rb2(s2)
+                  _ <- rb1(conn.session)
+                yield (),
+              me
+            )
+  extension [T[_], A](tr: Transaction[T, Nothing, A])
+    def run(): T[A] = tr.asInstanceOf[Transaction.Conclusion[T, A]].run()

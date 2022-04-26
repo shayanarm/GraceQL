@@ -105,9 +105,9 @@ object Eval {
     type Compiled[A] = () => A
 
     type Connection = DummyImplicit
-
-    given execSync[A]: Execute[A, A] with
-      def apply(compiled: Compiled[A], conn: Connection): A = compiled()
     inline def compile[A](inline query: SqlLike[Eval, S] ?=> A): () => A = 
       ${ Compiler.compile[A]('{query(using sl)}) }
+
+  given execSync[A]: Execute[Eval, [x] =>> () => x, DummyImplicit, A, A] with
+    def apply(compiled: () => A, conn: DummyImplicit): A = compiled()
 }
