@@ -7,5 +7,6 @@ class PostgreSQLSpec
       "PostgreSQL",
       "jdbc:postgresql://postgres:5432/",
       Some("postgres"),
-      "root"
+      "root",
+      org.postgresql.Driver()
     ) {}

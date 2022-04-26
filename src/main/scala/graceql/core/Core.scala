@@ -9,18 +9,20 @@ import scala.compiletime.summonInline
 import scala.concurrent.Promise
 import scala.util.Try
 
+final type Read[R[_], M[_], T] = T match
+  case (k, grpd)       => (k, Read[R, M, grpd])
+  case Source[R, M, a] => M[Read[R, M, a]]
+  case _               => T
+
 trait SqlLike[R[_], M[_]] extends Queryable[[x] =>> Source[R, M, x]]:
 
   type WriteResult
 
-  final type Read[T] = T match
-    case (k, grpd)       => (k, Read[grpd])
-    case Source[R, M, a] => M[Read[a]]
-    case _               => T
+  // final type Read[T] = graceql.core.Read[R, M, T]
 
   extension [A](a: A)
     @terminal
-    def read: Read[A]
+    def read: Read[R, M, A]
   extension [A](values: M[A])
     @targetName("valuesAsSource")
     inline def asSource: Source[R, M, A] = Source.Values(values)
@@ -36,9 +38,9 @@ trait SqlLike[R[_], M[_]] extends Queryable[[x] =>> Source[R, M, x]]:
     @terminal
     inline def +=(a: A): WriteResult = insert(a)
     @terminal
-    def update(predicate: A => Boolean)(a: A => A): WriteResult
+    def update(predicate: A => Boolean)(f: A => A): WriteResult
     @terminal
-    def delete(a: A => Boolean): WriteResult
+    def delete(predicate: A => Boolean): WriteResult
     @terminal
     inline def truncate(): WriteResult = delete(_ => true)
 
@@ -47,8 +49,8 @@ class GraceException(val message: String = null, val cause: Throwable = null)
   def this(message: String) = this(message, null)
   def this(cause: Throwable) = this(null, cause)
 
-trait Execute[R[_], Compiled[_], Connection ,A , B]:
-    def apply(compiled: Compiled[A], conn: Connection): B
+trait Execute[R[_], Compiled[_], Connection, A, B]:
+  def apply(compiled: Compiled[A], conn: Connection): B
 
 object Execute:
   given execLifted[R[_], Compiled[_], Connection, A, B, G[_]](using
@@ -56,7 +58,7 @@ object Execute:
       run: RunLifted[G]
   ): Execute[R, Compiled, Connection, A, G[B]] with
     def apply(compiled: Compiled[A], conn: Connection): G[B] =
-      run(() => execUnlifted(compiled, conn))  
+      run(() => execUnlifted(compiled, conn))
 
 trait Context[R[_], M[_]]:
   self =>
@@ -65,7 +67,7 @@ trait Context[R[_], M[_]]:
 
   type Connection
 
-  final type Execute[A,B] = graceql.core.Execute[R, Compiled, Connection, A, B]
+  final type Execute[A, B] = graceql.core.Execute[R, Compiled, Connection, A, B]
 
   inline def as[A, B](compiled: Compiled[A])(using conn: Connection): B =
     summonInline[Execute[A, B]].apply(compiled, conn)
@@ -83,11 +85,17 @@ trait Context[R[_], M[_]]:
     inline def option(using Connection): Option[A] = as[Option]
     inline def either(using Connection): Either[Throwable, A] =
       as[[x] =>> Either[Throwable, x]]
-    inline def transform[D[_]](using Connection)(using eq: A =:= M[RowType]): D[RowType] =
+    inline def transform[D[_]](using Connection)(using
+        eq: A =:= M[RowType]
+    ): D[RowType] =
       self.as[M[RowType], D[RowType]](eq.liftCo[Compiled](compiled))
-    inline def lazyList(using Connection)(using A =:= M[RowType]): LazyList[RowType] =
+    inline def lazyList(using Connection)(using
+        A =:= M[RowType]
+    ): LazyList[RowType] =
       transform[LazyList]
-    inline def stream(using Connection)(using A =:= M[RowType]): LazyList[RowType] =
+    inline def stream(using Connection)(using
+        A =:= M[RowType]
+    ): LazyList[RowType] =
       lazyList
 
   inline def apply[A](inline query: SqlLike[R, M] ?=> A): Exe[A] =

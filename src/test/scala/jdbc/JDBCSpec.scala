@@ -10,7 +10,8 @@ abstract class JDBCSpec(
     val vendor: String,
     val url: String,
     val user: Option[String],
-    val password: String
+    val password: String,
+    val driver: Driver
 ) extends AnyFlatSpec
     with should.Matchers {
 
@@ -18,7 +19,13 @@ abstract class JDBCSpec(
   Connecting to the $vendor vendor using url: ${url}, user: ${user.orNull}, and pass: ${password}
   """ should "succeed" in {
     noException should be thrownBy {
-      DriverManager.getConnection(url, user.orNull, password).close()
+      try
+        DriverManager.registerDriver(driver)
+        DriverManager.getConnection(url, user.orNull, password).close()
+      catch 
+        case e => 
+          println(e.getMessage)  
+          throw e
     }
   }
 }

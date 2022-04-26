@@ -7,5 +7,6 @@ class MySQLSpec
       "MySQL",
       "jdbc:mysql://mysql:3306/",
       None,
-      "root"
+      "root",
+      com.mysql.jdbc.Driver()
     ) {}
