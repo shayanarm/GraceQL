@@ -1,7 +1,6 @@
 package graceql.core
 
 import graceql.data.*
-import graceql.annotation.terminal
 import scala.annotation.targetName
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
@@ -14,9 +13,9 @@ final type Read[R[_], M[_], T] = T match
   case Source[R, M, a] => M[Read[R, M, a]]
   case _               => T
 
-trait Queryable[R[_], M[_]] extends SQLLike[[x] =>> Source[R, M, x]]:
+class terminal extends scala.annotation.StaticAnnotation
 
-  type WriteResult
+trait Queryable[R[_], M[_], WR] extends SQLLike[[x] =>> Source[R, M, x]]:
 
   // final type Read[T] = graceql.core.Read[R, M, T]
 
@@ -30,23 +29,23 @@ trait Queryable[R[_], M[_]] extends SQLLike[[x] =>> Source[R, M, x]]:
     @targetName("refAsSource")
     inline def asSource: Source[R, M, A] = Source.Ref(ref)
     @terminal
-    def insertMany(a: Source[R, M, A]): WriteResult
+    def insertMany(a: Source[R, M, A]): WR
     @terminal
-    inline def ++=(a: Source[R, M, A]): WriteResult = insertMany(a)
+    inline def ++=(a: Source[R, M, A]): WR = insertMany(a)
     @terminal
-    inline def insert(a: A): WriteResult = insertMany(a.pure)
+    inline def insert(a: A): WR = insertMany(a.pure)
     @terminal
-    inline def +=(a: A): WriteResult = insert(a)
+    inline def +=(a: A): WR = insert(a)
     @terminal
-    def update(predicate: A => Boolean)(f: A => A): WriteResult
+    def update(predicate: A => Boolean)(f: A => A): WR
     @terminal
-    def delete(predicate: A => Boolean): WriteResult
+    def delete(predicate: A => Boolean): WR
     @terminal
-    inline def dropWhile(predicate: A => Boolean): WriteResult = delete(predicate)
+    inline def dropWhile(predicate: A => Boolean): WR = delete(predicate)
     @terminal
-    def clear(): WriteResult = delete(_ => true)
+    def clear(): WR = delete(_ => true)
     @terminal
-    inline def truncate(): WriteResult = clear()
+    inline def truncate(): WR = clear()
 
 class GraceException(val message: Option[String] = None, val cause: Option[Throwable] = None)
     extends Exception(message.orNull, cause.orNull):
@@ -69,7 +68,7 @@ trait Context[R[_], M[_]]:
   self =>
 
   type Compiled[A]
-
+  type WriteResult
   type Connection
 
   final type Execute[A, B] = graceql.core.Execute[R, Compiled, Connection, A, B]
@@ -103,17 +102,10 @@ trait Context[R[_], M[_]]:
     ): LazyList[RowType] =
       lazyList
 
-  inline def apply[A](inline query: Queryable[R, M] ?=> A): Exe[A] =
+  inline def apply[A](inline query: Queryable[R, M, WriteResult] ?=> A): Exe[A] =
     Exe(compile(query))
 
-  inline def compile[A](inline query: Queryable[R, M] ?=> A): Compiled[A]
-
-trait MappedContext[R[_], M1[_], M2[_]](using val baseCtx: Context[R, M1])
-    extends Context[R, M2]:
-  def mapCapability(sl: Queryable[R, M1]): Queryable[R, M2]
-  inline def mapCompiled[A](inline exe: baseCtx.Compiled[A]): Compiled[A]
-  inline def compile[A](inline query: Queryable[R, M2] ?=> A): Compiled[A] =
-    mapCompiled(baseCtx.compile { sl ?=> query(using mapCapability(sl)) })
+  inline def compile[A](inline query: Queryable[R, M, WriteResult] ?=> A): Compiled[A]
 
 trait ACID[C]:
   def session(connection: C): C

@@ -4,9 +4,9 @@ import scala.quoted.*
 import graceql.core.Queryable
 import graceql.util.CompileOps
 
-object Compiler {
+abstract class JDBCCompiler[V]:
   import CompileOps.*
-  def compile[V, S[X] <: Iterable[X], A](e: Expr[Queryable[[x] =>> Table[V,x], S] ?=> A])(using q: Quotes): Expr[String] =
+  def compile[S[X] <: Iterable[X], A](e: Expr[Queryable[[x] =>> Table[V,x], S, Int] ?=> A])(using q: Quotes): Expr[String] =
     import q.reflect.*
     val pipe =
         inlineDefs andThen
@@ -14,4 +14,3 @@ object Compiler {
         inlineDefs
     logged(pipe)(e.asTerm).asExpr
     ???
-}

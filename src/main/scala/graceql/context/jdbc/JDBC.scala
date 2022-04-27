@@ -1,23 +1,26 @@
 package graceql.context.jdbc
 
 import graceql.core.*
-import graceql.context.jdbc.Compiler
+import graceql.context.jdbc.JDBCCompiler
+import java.sql.{Connection => JConnection}
 
 case class Table[V, +A](name: String)
 
-type JDBCContext[V, S[_]] = Context[[x] =>> Table[V, x], S]
+trait VendorContext[V, S[X] <: Iterable[X]]:
+  inline def compile[A](inline query: Queryable[[x] =>> Table[V, x], S, Int] ?=> A): String
 
 object Table {
-  given jdbcContext[V, S[X] <: Iterable[X]]: JDBCContext[V, S] with
+  given jdbcContext[V, S[X] <: Iterable[X]](using vc: VendorContext[V,S]): Context[[x] =>> Table[V, x], S] with
     type Compiled[A] = String
 
-    type Connection = DummyImplicit
+    type WriteResult = Int
+    type Connection = JConnection
 
-    inline def compile[A](inline query: Queryable[[x] =>> Table[V, x], S] ?=> A): String = 
-      ${ Compiler.compile[V, S, A]('query) }
+    inline def compile[A](inline query: Queryable[[x] =>> Table[V, x], S, Int] ?=> A): String = 
+      vc.compile(query)
 
-  given execSync[V, A]: Execute[[x] =>> Table[V, x], [x] =>> String, DummyImplicit, A, A] with
-    def apply(compiled: String, conn: DummyImplicit): A = ???
+  given execSync[V, A]: Execute[[x] =>> Table[V, x], [x] =>> String, JConnection, A, A] with
+    def apply(compiled: String, conn: JConnection): A = ???
 }
 
 class Database
