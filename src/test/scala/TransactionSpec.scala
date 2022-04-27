@@ -17,22 +17,23 @@ import java.util.concurrent.TimeUnit
 class TransactionSpec extends AnyFlatSpec with should.Matchers {
 
   val conn = summon[DummyImplicit]
-  val ref: IterRef[Seq][Int] = Ref(Seq(1))
+  val ref = IterRef(1,3,2)
+
+  def truncate = context[IterRef, Seq] {
+    ref.truncate()
+  }.future
+
+  def read = context[IterRef, Seq] {
+    ref.asSource.read
+  }.future
+
+  def gatling = Future.sequence(Seq.fill(100)(()).map(_ => truncate.zip(truncate)))
+
   val trans =
     for
-      s1 <- context[Eval, Seq] {
-        Seq(1,2,3,4,5).asSource.read
-      }.as[Future]
-      _ <- context[IterRef[Seq], Seq] {
-        ref.insertMany(s1.asSource)
-      }.as[Future]
-      _ <- context[IterRef[Seq], Seq] {
-        ref.delete(_ % 2 == 0)
-      }.as[Future]
-      s2 <- context[IterRef[Seq], Seq] {
-        ref.asSource.read
-      }.as[Future]
-    yield s2
+      _ <- gatling
+      s <- read
+    yield s
   val r = Await.result(trans, Duration.Inf)
   println(r)
 }

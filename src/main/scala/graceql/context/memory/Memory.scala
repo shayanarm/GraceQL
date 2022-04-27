@@ -4,51 +4,28 @@ import graceql.core.*
 import graceql.context.memory.Compiler
 import graceql.data.*
 import scala.collection.IterableFactory
-import java.util.concurrent.LinkedBlockingQueue
 
-
-sealed trait VoidSeq[+A] extends Iterable[A]
-private object VoidSeq extends IterableFactory[VoidSeq]:
-  private def exception = new GraceException(s"IterableFactory methods for the phantom collection type ${VoidSeq.getClass().getSimpleName} must not be called")
-  def empty[A]: VoidSeq[A] = throw exception
-  def from[A](source: IterableOnce[A]): VoidSeq[A] = throw exception
-  def newBuilder[A]: scala.collection.mutable.Builder[A, VoidSeq[A]] = throw exception
-
-class Ref[A](private val initial: A):
-  private val lbq: LinkedBlockingQueue[A] = LinkedBlockingQueue(1)
-  lbq.add(initial)
-
-  protected [memory] def read(): A = 
-    lbq.element()
-  protected [memory] def write(v: A): Unit =
-    lbq.clear()
-    lbq.put(v)
-  protected [memory] def write(f: A => A) = 
-    val e = f(lbq.peek())
-    lbq.clear()
-    lbq.put(e)
-  override def toString(): String = s"Ref(${read()})"  
-
-final type IterRef[S[X] <: Iterable[X]] = [x] =>> Ref[S[x]]    
-final type Eval[A] = IterRef[VoidSeq][A]
-
-object Ref:
-
+trait MemoryContextImpl[R[_]]:
   opaque type IterableFactoryWrapper[S[X] <: Iterable[X]] = IterableFactory[S]
   object IterableFactoryWrapper:
     given IterableFactoryWrapper[Seq] = Seq
     given IterableFactoryWrapper[List] = List
     given IterableFactoryWrapper[Vector] = Vector
     given IterableFactoryWrapper[LazyList] = LazyList
-    given IterableFactoryWrapper[VoidSeq] = VoidSeq
+    given IterableFactoryWrapper[Iterable] = Iterable
 
-  given memorySqlLike[S[X] <: Iterable[X], SR[X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S], ifac2: IterableFactoryWrapper[SR]): SqlLike[IterRef[SR], S] with { self =>
-    private type M[A] = Source[IterRef[SR], S, A]
+  protected def refToIterable[A](ref: R[A]): Iterable[A]
+  protected def refInsertMany[A, S[X] <: Iterable[X]](ref: R[A])(as: S[A]): Unit
+  protected def refUpdate[A](ref: R[A])(predicate: A => Boolean)(f: A => A): Unit
+  protected def refDelete[A](ref: R[A])(predicate: A => Boolean): Unit
+
+  given memorySqlLike[S[X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): SqlLike[R, S] with { self =>
+    private type M[A] = Source[R, S, A]
 
     extension [A](ma: M[A])
       private def merge: S[A] = ma match
           case Source.Values(c) => c
-          case Source.Ref(mem)  => ifac.from(mem.read())
+          case Source.Ref(mem)  => ifac.from(refToIterable(mem))
       private inline def mapValues[B](f: S[A] => S[B]) =
         Source.Values(ma.withValues(f))
       private inline def withValues[B](f: S[A] => B): B = f(ma.merge)
@@ -110,28 +87,60 @@ object Ref:
     extension [A](a: A) def pure: M[A] = ifac(a).asSource
 
     extension [A](a: A)
-      @scala.annotation.nowarn def read: Read[IterRef[SR], S, A] =
+      @scala.annotation.nowarn def read: Read[R, S, A] =
         a match
           case s: (k, g) => (s._1, s._2.read)
           case s: M[a] => ifac.from(s.merge.map(_.read))
           case s: _ => s
 
 
-    extension [A](ref: IterRef[SR][A])
+    extension [A](ref: R[A])
       def insertMany(a: M[A]): Unit = 
-        ref.write(s => ifac2.from(s ++ a.merge))
+        refInsertMany(ref)(a.merge)
       def update(predicate: A => Boolean)(f: A => A): Unit = 
-        ref.write(s => ifac2.from(s.map(e => if predicate(e) then f(e) else e)))
+        refUpdate(ref)(predicate)(f)
       def delete(predicate: A => Boolean): Unit =
-        ref.write(s => ifac2.from(s.filterNot(predicate)))
+       refDelete(ref)(predicate)
   }
 
-  given memoryContext[S[X] <: Iterable[X], SR[X] <: Iterable[X]](using sl: SqlLike[IterRef[SR],S]): Context[IterRef[SR], S] with
+  given memoryContext[S[X] <: Iterable[X], R[_]](using sl: SqlLike[R, S]): Context[R, S] with
     type Compiled[A] = () => A
 
     type Connection = DummyImplicit
-    inline def compile[A](inline query: SqlLike[IterRef[SR], S] ?=> A): () => A =
+    inline def compile[A](inline query: SqlLike[R, S] ?=> A): () => A =
       ${ Compiler.compile[A]('{query(using sl)}) }
 
-  given execSync[A, SR[X] <: Iterable[X]]: Execute[IterRef[SR], [x] =>> () => x, DummyImplicit, A, A] with
+  given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
     def apply(compiled: () => A, conn: DummyImplicit): A = compiled()
+
+class IterRef[A](private var underlying: Iterable[A]):
+  def this(values: A*) = this(values)
+  protected [memory] def value: Iterable[A] = 
+    underlying
+  protected [memory] def value(f: Iterable[A] => Iterable[A]): Unit = 
+    synchronized {
+      underlying = f(underlying)
+    }
+
+  override def toString(): String = s"IterRef(${value})"        
+
+object IterRef extends MemoryContextImpl[IterRef]:
+  
+  protected def refToIterable[A](ref: IterRef[A]): Iterable[A] = ref.value
+  
+  protected def refInsertMany[A, S[X] <: Iterable[X]](ref: IterRef[A])(as: S[A]): Unit = 
+    ref.value(s => s ++ as)
+  
+  protected def refUpdate[A](ref: IterRef[A])(predicate: A => Boolean)(f: A => A): Unit = 
+    ref.value(s => s.map(e => if predicate(e) then f(e) else e))
+  
+  protected def refDelete[A](ref: IterRef[A])(predicate: A => Boolean): Unit = 
+    ref.value(s => s.filterNot(predicate))
+
+final type Eval[A]
+object Eval extends MemoryContextImpl[Eval]:
+  def absured[A,B](ref: Eval[A]): B = throw new GraceException(s"Supplying a value for ${Eval.getClass.getSimpleName} is impossible!")
+  protected def refToIterable[A](ref: Eval[A]): Iterable[A] = absured(ref)
+  protected def refInsertMany[A, S[X] <: Iterable[X]](ref: Eval[A])(as: S[A]): Unit = absured(ref)
+  protected def refUpdate[A](ref: Eval[A])(predicate: A => Boolean)(f: A => A): Unit = absured(ref)
+  protected def refDelete[A](ref: Eval[A])(predicate: A => Boolean): Unit = absured(ref)
