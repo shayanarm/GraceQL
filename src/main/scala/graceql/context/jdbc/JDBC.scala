@@ -8,7 +8,7 @@ case class Table[V, +A](name: String)
 type JDBCContext[V, S[_]] = Context[[x] =>> Table[V, x], S]
 
 object Table {
-  given jdbcContext[V, S[X] <: Iterable[X]]: Context[[x] =>> Table[V, x], S] with
+  given jdbcContext[V, S[X] <: Iterable[X]]: JDBCContext[V, S] with
     type Compiled[A] = String
 
     type Connection = DummyImplicit
