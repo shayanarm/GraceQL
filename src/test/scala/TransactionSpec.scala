@@ -28,16 +28,24 @@ class TransactionSpec extends AnyFlatSpec with should.Matchers {
   }.future
 
   def insert = context[IterRef, Seq] {
-    ref ++= Seq(1,2,3,4,5).asSource
+    ref ++= Seq(1, 2, 3, 4, 5).asSource
   }.future
 
-  def gatling = Future.sequence(Seq.fill(100)(insert.zip(read).zip(truncate)))
+  // def gatling = Future.sequence(Seq.fill(100)(insert.flatMap(_ => read).flatMap(_ => truncate)))
 
   val trans =
-    for
-      _ <- gatling
-      s <- read
-    yield s
+    for _ <- Future.sequence {
+        Seq.fill(100) {
+          Future.sequence {
+            Seq(
+              insert,
+              read.map(println),
+              truncate
+            )
+          }
+        }
+      }
+    yield ()
   val r = Await.result(trans, Duration.Inf)
   println(r)
 }
