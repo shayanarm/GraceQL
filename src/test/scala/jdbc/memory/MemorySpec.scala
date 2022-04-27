@@ -17,16 +17,4 @@ import matchers._
 import java.util.concurrent.TimeUnit
 
 class MemorySpec extends AnyFlatSpec with should.Matchers {
-  val ref = IterRef[Int](1)
-
-  println {
-    for
-      _ <- context[IterRef, Seq] {
-        ref.update(_ => true) {_ + ref.asSource.size}
-      }.asTry
-      s <- context[IterRef, Seq] {
-        ref.asSource.read
-      }.asTry
-    yield s
-  }
 }
