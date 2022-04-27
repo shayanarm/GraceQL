@@ -162,9 +162,9 @@ object IterRef extends MemoryContextImpl[IterRef]:
 
 final type Eval[A]
 object Eval extends MemoryContextImpl[Eval]:
-  def absured[A,B](ref: Eval[A]): B = throw new GraceException(s"Supplying a value for ${Eval.getClass.getSimpleName} is impossible!")
-  protected def refToIterable[A](ref: Eval[A]): Iterable[A] = absured(ref)
-  protected def refInsertMany[A, S[X] <: Iterable[X]](ref: Eval[A])(as: S[A]): Unit = absured(ref)
-  protected def refUpdate[A](ref: Eval[A])(predicate: A => Boolean)(f: A => A): Unit = absured(ref)
-  protected def refDelete[A](ref: Eval[A])(predicate: A => Boolean): Unit = absured(ref)
-  protected def refTruncate[A](ref: Eval[A]): Unit = absured(ref)
+  def absurd[A,B](ref: Eval[A]): B = throw new GraceException(s"Supplying a value for ${Eval.getClass.getSimpleName} is impossible!")
+  protected def refToIterable[A](ref: Eval[A]): Iterable[A] = absurd(ref)
+  protected def refInsertMany[A, S[X] <: Iterable[X]](ref: Eval[A])(as: S[A]): Unit = absurd(ref)
+  protected def refUpdate[A](ref: Eval[A])(predicate: A => Boolean)(f: A => A): Unit = absurd(ref)
+  protected def refDelete[A](ref: Eval[A])(predicate: A => Boolean): Unit = absurd(ref)
+  protected def refTruncate[A](ref: Eval[A]): Unit = absurd(ref)

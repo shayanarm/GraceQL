@@ -28,7 +28,7 @@ class TransactionSpec extends AnyFlatSpec with should.Matchers {
   }.future
 
   def insert = context[IterRef, Seq] {
-    ref.insertMany(Seq(1,2,3,4,5).asSource)
+    ref ++= Seq(1,2,3,4,5).asSource
   }.future
 
   def gatling = Future.sequence(Seq.fill(100)(insert.zip(read).zip(truncate)))
