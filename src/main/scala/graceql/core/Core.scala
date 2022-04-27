@@ -42,14 +42,17 @@ trait Queryable[R[_], M[_]] extends SQLLike[[x] =>> Source[R, M, x]]:
     @terminal
     def delete(predicate: A => Boolean): WriteResult
     @terminal
-    def truncate(): WriteResult = delete(_ => true)
+    inline def dropWhile(predicate: A => Boolean): WriteResult = delete(predicate)
     @terminal
-    inline def clear(): WriteResult = truncate()
+    def clear(): WriteResult = delete(_ => true)
+    @terminal
+    inline def truncate(): WriteResult = clear()
 
-class GraceException(val message: String = null, val cause: Throwable = null)
-    extends Exception(message, cause):
-  def this(message: String) = this(message, null)
-  def this(cause: Throwable) = this(null, cause)
+class GraceException(val message: Option[String] = None, val cause: Option[Throwable] = None)
+    extends Exception(message.orNull, cause.orNull):
+  def this(message: String, cause: Throwable) = this(Some(message), Some(cause))
+  def this(message: String) = this(Some(message), None)
+  def this(cause: Throwable) = this(None, Some(cause))
 
 trait Execute[R[_], Compiled[_], Connection, A, B]:
   def apply(compiled: Compiled[A], conn: Connection): B

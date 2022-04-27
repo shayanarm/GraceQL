@@ -18,7 +18,7 @@ trait MemoryContextImpl[R[_]]:
   protected def refInsertMany[A, S[X] <: Iterable[X]](ref: R[A])(as: S[A]): Unit
   protected def refUpdate[A](ref: R[A])(predicate: A => Boolean)(f: A => A): Unit
   protected def refDelete[A](ref: R[A])(predicate: A => Boolean): Unit
-  protected def refTruncate[A](ref: R[A]): Unit
+  protected def refClear[A](ref: R[A]): Unit
 
   given memoryQueryable[S[X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S] with { self =>
     private type M[A] = Source[R, S, A]
@@ -101,8 +101,8 @@ trait MemoryContextImpl[R[_]]:
         refUpdate(ref)(predicate)(f)
       def delete(predicate: A => Boolean): Unit =
         refDelete(ref)(predicate)
-      override def truncate(): Unit = 
-        refTruncate(ref) 
+      override def clear(): Unit = 
+        refClear(ref) 
   }
 
   given memoryContext[S[X] <: Iterable[X], R[_]](using sl: Queryable[R, S]): Context[R, S] with
@@ -140,13 +140,14 @@ class IterRef[A] private(private val underlying: scala.collection.mutable.ArrayB
   }
 
   protected [memory] inline def delete(pred: A => Boolean): Unit = write {_.dropWhileInPlace(pred)}
-  protected [memory] inline def truncate(): Unit = write {_.clear()}
+  protected [memory] inline def clear(): Unit = write {_.clear()}
 
   override def toString(): String = s"${getClass.getSimpleName}(${value})"        
 
 object IterRef extends MemoryContextImpl[IterRef]:
   
-  protected def refToIterable[A](ref: IterRef[A]): Iterable[A] = ref.value
+  protected def refToIterable[A](ref: IterRef[A]): Iterable[A] = 
+    ref.value
   
   protected def refInsertMany[A, S[X] <: Iterable[X]](ref: IterRef[A])(as: S[A]): Unit = 
     ref.insertMany(as)
@@ -157,8 +158,8 @@ object IterRef extends MemoryContextImpl[IterRef]:
   protected def refDelete[A](ref: IterRef[A])(predicate: A => Boolean): Unit = 
     ref.delete(predicate)
 
-  protected def refTruncate[A](ref: IterRef[A]): Unit = 
-    ref.truncate()  
+  protected def refClear[A](ref: IterRef[A]): Unit = 
+    ref.clear()  
 
 final type Eval[A]
 object Eval extends MemoryContextImpl[Eval]:
@@ -167,4 +168,4 @@ object Eval extends MemoryContextImpl[Eval]:
   protected def refInsertMany[A, S[X] <: Iterable[X]](ref: Eval[A])(as: S[A]): Unit = absurd(ref)
   protected def refUpdate[A](ref: Eval[A])(predicate: A => Boolean)(f: A => A): Unit = absurd(ref)
   protected def refDelete[A](ref: Eval[A])(predicate: A => Boolean): Unit = absurd(ref)
-  protected def refTruncate[A](ref: Eval[A]): Unit = absurd(ref)
+  protected def refClear[A](ref: Eval[A]): Unit = absurd(ref)
