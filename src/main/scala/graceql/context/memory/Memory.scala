@@ -4,6 +4,7 @@ import graceql.core.*
 import graceql.context.memory.Compiler
 import graceql.data.*
 import scala.collection.IterableFactory
+import scala.collection.mutable.ArrayBuffer
 
 trait MemoryContextImpl[R[_]]:
   opaque type IterableFactoryWrapper[S[X] <: Iterable[X]] = IterableFactory[S]
@@ -15,7 +16,7 @@ trait MemoryContextImpl[R[_]]:
     given IterableFactoryWrapper[Iterable] = Iterable
 
   protected def refToIterable[A](ref: R[A]): Iterable[A]
-  protected def refInsertMany[A, S[X] <: Iterable[X]](ref: R[A])(as: S[A]): Unit
+  protected def refInsertMany[A](ref: R[A])(as: Iterable[A]): Unit
   protected def refUpdate[A](ref: R[A])(predicate: A => Boolean)(f: A => A): Unit
   protected def refDelete[A](ref: R[A])(predicate: A => Boolean): Unit
   protected def refClear[A](ref: R[A]): Unit
@@ -115,16 +116,16 @@ trait MemoryContextImpl[R[_]]:
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
     def apply(compiled: () => A, conn: DummyImplicit): A = compiled()
 
-class IterRef[A] private(private val underlying: scala.collection.mutable.ArrayBuffer[A]):
-  def this(initial: Iterable[A]) = this(scala.collection.mutable.ArrayBuffer.from(initial))
-  def this(values: A*) = this(scala.collection.mutable.ArrayBuffer.from(values))
+class IterRef[A] private(private val underlying: ArrayBuffer[A]):
+  def this(initial: Iterable[A]) = this(ArrayBuffer.from(initial))
+  def this(values: A*) = this(values)
 
   protected [memory] def value: Iterable[A] = 
     synchronized {
       Vector.from(underlying)
     }
 
-  protected [memory] def write(f: scala.collection.mutable.ArrayBuffer[A] => Unit): Unit = 
+  protected [memory] def write(f: ArrayBuffer[A] => Unit): Unit = 
     synchronized {
       f(underlying)
     }
@@ -149,7 +150,7 @@ object IterRef extends MemoryContextImpl[IterRef]:
   protected def refToIterable[A](ref: IterRef[A]): Iterable[A] = 
     ref.value
   
-  protected def refInsertMany[A, S[X] <: Iterable[X]](ref: IterRef[A])(as: S[A]): Unit = 
+  protected def refInsertMany[A](ref: IterRef[A])(as: Iterable[A]): Unit = 
     ref.insertMany(as)
   
   protected def refUpdate[A](ref: IterRef[A])(predicate: A => Boolean)(f: A => A): Unit = 
@@ -165,7 +166,7 @@ final type Eval[A]
 object Eval extends MemoryContextImpl[Eval]:
   def absurd[A,B](ref: Eval[A]): B = throw new GraceException(s"Supplying a value for ${Eval.getClass.getSimpleName} is impossible!")
   protected def refToIterable[A](ref: Eval[A]): Iterable[A] = absurd(ref)
-  protected def refInsertMany[A, S[X] <: Iterable[X]](ref: Eval[A])(as: S[A]): Unit = absurd(ref)
+  protected def refInsertMany[A](ref: Eval[A])(as: Iterable[A]): Unit = absurd(ref)
   protected def refUpdate[A](ref: Eval[A])(predicate: A => Boolean)(f: A => A): Unit = absurd(ref)
   protected def refDelete[A](ref: Eval[A])(predicate: A => Boolean): Unit = absurd(ref)
   protected def refClear[A](ref: Eval[A]): Unit = absurd(ref)
