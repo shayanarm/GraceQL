@@ -13,7 +13,7 @@ object Table {
 
     type Connection = DummyImplicit
 
-    inline def compile[A](inline query: SqlLike[[x] =>> Table[V, x], S] ?=> A): String = 
+    inline def compile[A](inline query: Queryable[[x] =>> Table[V, x], S] ?=> A): String = 
       ${ Compiler.compile[V, S, A]('query) }
 
   given execSync[V, A]: Execute[[x] =>> Table[V, x], [x] =>> String, DummyImplicit, A, A] with

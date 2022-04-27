@@ -1,6 +1,6 @@
 package graceql.data
 
-trait Queryable[M[_]] extends MonadZero[M] with MonadPlus[M]:
+trait SQLLike[M[_]] extends MonadZero[M] with MonadPlus[M]:
   extension [A](ma: M[A])
 
     def leftJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(A, Option[B])]

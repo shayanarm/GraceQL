@@ -14,7 +14,7 @@ final type Read[R[_], M[_], T] = T match
   case Source[R, M, a] => M[Read[R, M, a]]
   case _               => T
 
-trait SqlLike[R[_], M[_]] extends Queryable[[x] =>> Source[R, M, x]]:
+trait Queryable[R[_], M[_]] extends SQLLike[[x] =>> Source[R, M, x]]:
 
   type WriteResult
 
@@ -42,7 +42,9 @@ trait SqlLike[R[_], M[_]] extends Queryable[[x] =>> Source[R, M, x]]:
     @terminal
     def delete(predicate: A => Boolean): WriteResult
     @terminal
-    inline def truncate(): WriteResult = delete(_ => true)
+    def truncate(): WriteResult = delete(_ => true)
+    @terminal
+    inline def clear(): WriteResult = truncate()
 
 class GraceException(val message: String = null, val cause: Throwable = null)
     extends Exception(message, cause):
@@ -98,16 +100,16 @@ trait Context[R[_], M[_]]:
     ): LazyList[RowType] =
       lazyList
 
-  inline def apply[A](inline query: SqlLike[R, M] ?=> A): Exe[A] =
+  inline def apply[A](inline query: Queryable[R, M] ?=> A): Exe[A] =
     Exe(compile(query))
 
-  inline def compile[A](inline query: SqlLike[R, M] ?=> A): Compiled[A]
+  inline def compile[A](inline query: Queryable[R, M] ?=> A): Compiled[A]
 
 trait MappedContext[R[_], M1[_], M2[_]](using val baseCtx: Context[R, M1])
     extends Context[R, M2]:
-  def mapCapability(sl: SqlLike[R, M1]): SqlLike[R, M2]
+  def mapCapability(sl: Queryable[R, M1]): Queryable[R, M2]
   inline def mapCompiled[A](inline exe: baseCtx.Compiled[A]): Compiled[A]
-  inline def compile[A](inline query: SqlLike[R, M2] ?=> A): Compiled[A] =
+  inline def compile[A](inline query: Queryable[R, M2] ?=> A): Compiled[A] =
     mapCompiled(baseCtx.compile { sl ?=> query(using mapCapability(sl)) })
 
 trait ACID[C]:
@@ -117,11 +119,7 @@ trait ACID[C]:
   def rollback(connection: C): Unit
 
 object ACID:
-  given ACID[DummyImplicit] with
-    def session(connection: DummyImplicit): DummyImplicit = connection
-    def open(connection: DummyImplicit): Unit = ()
-    def commit(connection: DummyImplicit): Unit = ()
-    def rollback(connection: DummyImplicit): Unit = ()
+end ACID
 
 sealed class Transaction[T[_], C, A]
 object Transaction:
@@ -150,7 +148,7 @@ object Transaction:
         me
       )
   extension [T[_], C](tr: Transaction[T, C, Nothing])
-    final def apply[A](block: C ?=> T[A]): T[A] = tr match
+    @scala.annotation.nowarn final def apply[A](block: C ?=> T[A]): T[A] = tr match
       case conn @ Continuation(_, open, commit, rollback, me) =>
         given MonadError[T] = me
         for
@@ -168,7 +166,7 @@ object Transaction:
         yield r
     final def map[A](f: C => T[A]): Transaction[T, Nothing, A] =
       Conclusion(() => apply(s ?=> f(s)))
-    final def withFilter(pred: C => Boolean): Transaction[T, C, Nothing] =
+    @scala.annotation.nowarn final def withFilter(pred: C => Boolean): Transaction[T, C, Nothing] =
       tr match
         case conn @ Continuation(_, _, _, _, me) =>
           pred(conn.session) match
@@ -177,7 +175,7 @@ object Transaction:
               throw new NoSuchElementException(
                 "Transaction.withFilter predicate is not satisfied. Also, this method should not be called"
               )
-    final def flatMap[C2, A](
+    @scala.annotation.nowarn final def flatMap[C2, A](
         f: C => Transaction[T, C2, A]
     ): Transaction[T, C2, A] = tr match
       case conn @ Continuation(_, o1, c1, rb1, me) =>

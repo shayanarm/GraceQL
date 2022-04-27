@@ -18,8 +18,9 @@ trait MemoryContextImpl[R[_]]:
   protected def refInsertMany[A, S[X] <: Iterable[X]](ref: R[A])(as: S[A]): Unit
   protected def refUpdate[A](ref: R[A])(predicate: A => Boolean)(f: A => A): Unit
   protected def refDelete[A](ref: R[A])(predicate: A => Boolean): Unit
+  protected def refTruncate[A](ref: R[A]): Unit
 
-  given memorySqlLike[S[X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): SqlLike[R, S] with { self =>
+  given memoryQueryable[S[X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S] with { self =>
     private type M[A] = Source[R, S, A]
 
     extension [A](ma: M[A])
@@ -91,8 +92,7 @@ trait MemoryContextImpl[R[_]]:
         a match
           case s: (k, g) => (s._1, s._2.read)
           case s: M[a] => ifac.from(s.merge.map(_.read))
-          case s: _ => s
-
+          case s: _ => a
 
     extension [A](ref: R[A])
       def insertMany(a: M[A]): Unit = 
@@ -100,42 +100,65 @@ trait MemoryContextImpl[R[_]]:
       def update(predicate: A => Boolean)(f: A => A): Unit = 
         refUpdate(ref)(predicate)(f)
       def delete(predicate: A => Boolean): Unit =
-       refDelete(ref)(predicate)
+        refDelete(ref)(predicate)
+      override def truncate(): Unit = 
+        refTruncate(ref) 
   }
 
-  given memoryContext[S[X] <: Iterable[X], R[_]](using sl: SqlLike[R, S]): Context[R, S] with
+  given memoryContext[S[X] <: Iterable[X], R[_]](using sl: Queryable[R, S]): Context[R, S] with
     type Compiled[A] = () => A
 
     type Connection = DummyImplicit
-    inline def compile[A](inline query: SqlLike[R, S] ?=> A): () => A =
+    inline def compile[A](inline query: Queryable[R, S] ?=> A): () => A =
       ${ Compiler.compile[A]('{query(using sl)}) }
 
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
     def apply(compiled: () => A, conn: DummyImplicit): A = compiled()
 
-class IterRef[A](private var underlying: Iterable[A]):
-  def this(values: A*) = this(values)
+class IterRef[A] private(private val underlying: scala.collection.mutable.ArrayBuffer[A]):
+  def this(initial: Iterable[A]) = this(scala.collection.mutable.ArrayBuffer.from(initial))
+  def this(values: A*) = this(scala.collection.mutable.ArrayBuffer.from(values))
+
   protected [memory] def value: Iterable[A] = 
-    underlying
-  protected [memory] def value(f: Iterable[A] => Iterable[A]): Unit = 
     synchronized {
-      underlying = f(underlying)
+      Vector.from(underlying)
     }
 
-  override def toString(): String = s"IterRef(${value})"        
+  protected [memory] def write(f: scala.collection.mutable.ArrayBuffer[A] => Unit): Unit = 
+    synchronized {
+      f(underlying)
+    }
+    
+  protected [memory] inline def insertMany(as: Iterable[A]): Unit = write {_ ++= as}
+
+  protected [memory] inline def update(pred: A => Boolean)(f: A => A): Unit = write {buffer => 
+    buffer.indices.foreach {i => 
+      val elem = buffer(i)
+      if (pred(elem)) then 
+        buffer.update(i, f(elem))  
+    }
+  }
+
+  protected [memory] inline def delete(pred: A => Boolean): Unit = write {_.dropWhileInPlace(pred)}
+  protected [memory] inline def truncate(): Unit = write {_.clear()}
+
+  override def toString(): String = s"${getClass.getSimpleName}(${value})"        
 
 object IterRef extends MemoryContextImpl[IterRef]:
   
   protected def refToIterable[A](ref: IterRef[A]): Iterable[A] = ref.value
   
   protected def refInsertMany[A, S[X] <: Iterable[X]](ref: IterRef[A])(as: S[A]): Unit = 
-    ref.value(s => s ++ as)
+    ref.insertMany(as)
   
   protected def refUpdate[A](ref: IterRef[A])(predicate: A => Boolean)(f: A => A): Unit = 
-    ref.value(s => s.map(e => if predicate(e) then f(e) else e))
+    ref.update(predicate)(f)
   
   protected def refDelete[A](ref: IterRef[A])(predicate: A => Boolean): Unit = 
-    ref.value(s => s.filterNot(predicate))
+    ref.delete(predicate)
+
+  protected def refTruncate[A](ref: IterRef[A]): Unit = 
+    ref.truncate()  
 
 final type Eval[A]
 object Eval extends MemoryContextImpl[Eval]:
@@ -144,3 +167,4 @@ object Eval extends MemoryContextImpl[Eval]:
   protected def refInsertMany[A, S[X] <: Iterable[X]](ref: Eval[A])(as: S[A]): Unit = absured(ref)
   protected def refUpdate[A](ref: Eval[A])(predicate: A => Boolean)(f: A => A): Unit = absured(ref)
   protected def refDelete[A](ref: Eval[A])(predicate: A => Boolean): Unit = absured(ref)
+  protected def refTruncate[A](ref: Eval[A]): Unit = absured(ref)
