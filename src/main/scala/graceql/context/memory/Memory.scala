@@ -35,6 +35,8 @@ trait MemoryContextImpl[R[_]]:
     type WriteResult = Unit
 
     extension [A](ma: M[A])
+
+      def size: Int = ma.merge.size
       override def map[B](f: A => B): M[B] =
         ma.mapValues(v => ifac.from(v.map(f)))
 

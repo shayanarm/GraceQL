@@ -1,3 +1,5 @@
+package memory
+
 import scala.quoted.*
 import graceql.*
 import graceql.context.memory.*
@@ -14,6 +16,17 @@ import flatspec._
 import matchers._
 import java.util.concurrent.TimeUnit
 
-class TransactionSpec extends AnyFlatSpec with should.Matchers {
+class MemorySpec extends AnyFlatSpec with should.Matchers {
+  val ref = IterRef[Int](1)
 
+  println {
+    for
+      _ <- context[IterRef, Seq] {
+        ref.update(_ => true) {_ + ref.asSource.size}
+      }.asTry
+      s <- context[IterRef, Seq] {
+        ref.asSource.read
+      }.asTry
+    yield s
+  }
 }

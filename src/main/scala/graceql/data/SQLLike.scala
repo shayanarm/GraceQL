@@ -3,6 +3,10 @@ package graceql.data
 trait SQLLike[M[_]] extends MonadZero[M] with MonadPlus[M]:
   extension [A](ma: M[A])
 
+    def size: Int
+
+    inline def length: Int = size
+
     def leftJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(A, Option[B])]
 
     def rightJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(Option[A], B)] =
