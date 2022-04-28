@@ -6,8 +6,8 @@ import graceql.data.MonadError
 import scala.compiletime.summonInline
 
 package object context {
-  class CallProxy[R[_],M[_]] {
-    inline def apply[A](using ctx: Context[R,M])(inline query: Queryable[R, M, ctx.WriteResult] ?=> A): ctx.Exe[A] = ctx.apply(query)
+  class CallProxy[C[X[_]] <: Context[X], R[_]] {
+    inline def apply[A](using ctx: C[R])(inline query: ctx.Capabilities ?=> A): ctx.Exe[A] = ctx.apply(query)
   }
-  transparent inline def apply[R[_],M[_]]: CallProxy[R, M] = CallProxy[R,M]()
+  transparent inline def apply[C[X[_]] <: Context[X], R[_]]: CallProxy[C, R] = CallProxy[C, R]()
 }

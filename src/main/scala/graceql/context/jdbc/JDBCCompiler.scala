@@ -6,7 +6,7 @@ import graceql.util.CompileOps
 
 abstract class JDBCCompiler[V]:
   import CompileOps.*
-  def compile[S[X] <: Iterable[X], A](e: Expr[Queryable[[x] =>> Table[V,x], S, Int] ?=> A])(using q: Quotes): Expr[String] =
+  def compile[S[+X] <: Iterable[X], A](e: Expr[Queryable[[x] =>> Table[V,x], S, [x] =>> String] ?=> A])(using q: Quotes): Expr[String] =
     import q.reflect.*
     val pipe =
         inlineDefs andThen
