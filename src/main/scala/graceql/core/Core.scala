@@ -90,11 +90,13 @@ trait Queryable[R[_], M[+_], C[_]] extends SQLLike[[x] =>> Source[R, M, x]] with
     inline def asSource: Source[R, M, A] = Source.Ref(ref)
     @terminal
     def insertMany[B](a: Source[R, M, A])(returning: A => B): M[B]
+    @terminal
     def insertMany(a: Source[R, M, A]): Unit
     @terminal
     inline def ++=(a: Source[R, M, A]): Unit = insertMany(a)
     @terminal
     def insert[B](a: A)(returning: A => B): B
+    @terminal
     inline def insert[B](a: A): Unit = insert(a)(a => ())
     @terminal
     inline def +=(a: A): Unit = insert(a)
