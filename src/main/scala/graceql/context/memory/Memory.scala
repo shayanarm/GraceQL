@@ -143,9 +143,7 @@ class IterRef[A] private(private val underlying: ArrayBuffer[A]):
   }
 
   protected [memory] inline def delete(pred: A => Boolean): Unit = write {_.dropWhileInPlace(pred)}
-  protected [memory] inline def clear(): Unit = write {_.clear()}
-
-  override def toString(): String = s"${getClass.getSimpleName}(${value(using Seq)})"        
+  protected [memory] inline def clear(): Unit = write {_.clear()}      
 
 object IterRef extends MemoryContextImpl[IterRef]:
   
