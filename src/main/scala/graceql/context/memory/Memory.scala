@@ -22,9 +22,9 @@ trait MemoryQueryContextImpl[R[_]]:
   protected def refClear[A](ref: R[A]): Int
 
   given memoryQueryable[S[+X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S, [x] =>> () => x] with { self =>
-    private type M[A] = Source[R, S, A]
+    private type Src[A] = Source[R, S, A]
 
-    extension [A](ma: M[A])
+    extension [A](ma: Src[A])
       private def merge: S[A] = ma match
           case Source.Values(c) => c
           case Source.Ref(mem)  => refToIterable(mem)(using ifac)
@@ -35,13 +35,13 @@ trait MemoryQueryContextImpl[R[_]]:
     def fromBinary[A](bin: () => A): A = bin()
     protected def toBinary[A](a: A): () => A = () => a
 
-    extension [A](ma: M[A])
+    extension [A](ma: Src[A])
 
       def size: Int = ma.merge.size
-      override def map[B](f: A => B): M[B] =
+      override def map[B](f: A => B): Src[B] =
         ma.mapValues(v => ifac.from(v.map(f)))
 
-      def flatMap[B](f: A => M[B]): M[B] =
+      def flatMap[B](f: A => Src[B]): Src[B] =
         ma.mapValues { vs =>
           val r = vs.flatMap{a =>
             f(a).withValues(identity)
@@ -49,60 +49,60 @@ trait MemoryQueryContextImpl[R[_]]:
           ifac.from(r)
         }
 
-      def concat(other: M[A]): M[A] =
+      def concat(other: Src[A]): Src[A] =
         other.withValues { vs => ma.mapValues(ss => ifac.from(ss.concat(vs)))}
 
-      def filter(pred: A => Boolean): M[A] = ma.mapValues(vs => ifac.from(vs.filter(pred)))
+      def filter(pred: A => Boolean): Src[A] = ma.mapValues(vs => ifac.from(vs.filter(pred)))
 
-      def withFilter(pred: A => Boolean): scala.collection.WithFilter[A, M] =
-        val iterOps = new scala.collection.IterableOps[A,M,M[A]] { io =>
+      def withFilter(pred: A => Boolean): scala.collection.WithFilter[A, Src] =
+        val iterOps = new scala.collection.IterableOps[A,Src,Src[A]] { io =>
           def iterator = ma.withValues(_.iterator)
           def coll = ma
-          protected def fromSpecific(coll: IterableOnce[A @scala.annotation.unchecked.uncheckedVariance]): M[A] =
+          protected def fromSpecific(coll: IterableOnce[A @scala.annotation.unchecked.uncheckedVariance]): Src[A] =
             ifac.from(coll).asSource
-          def iterableFactory: IterableFactory[M] =
-            new IterableFactory[M] {
-                def from[X](source: IterableOnce[X]): M[X] = ifac.from(source).asSource
-                def empty[X]: M[X] = ifac.empty[X].asSource
-                def newBuilder[X]: scala.collection.mutable.Builder[X, M[X]] =
+          def iterableFactory: IterableFactory[Src] =
+            new IterableFactory[Src] {
+                def from[X](source: IterableOnce[X]): Src[X] = ifac.from(source).asSource
+                def empty[X]: Src[X] = ifac.empty[X].asSource
+                def newBuilder[X]: scala.collection.mutable.Builder[X, Src[X]] =
                   val seqBuilder = ifac.newBuilder[X]
-                  new scala.collection.mutable.Builder[X,M[X]] {
+                  new scala.collection.mutable.Builder[X,Src[X]] {
                     def addOne(elem: X) =
                       seqBuilder.addOne(elem)
                       this
                     def clear(): Unit = seqBuilder.clear()
-                    def result(): M[X] = seqBuilder.result().asSource
+                    def result(): Src[X] = seqBuilder.result().asSource
                   }
             }
-          protected def newSpecificBuilder: scala.collection.mutable.Builder[A @scala.annotation.unchecked.uncheckedVariance, M[A]] =
+          protected def newSpecificBuilder: scala.collection.mutable.Builder[A @scala.annotation.unchecked.uncheckedVariance, Src[A]] =
             io.iterableFactory.newBuilder
           def toIterable = ma.withValues(_.toIterable)
         }
-        new scala.collection.IterableOps.WithFilter[A,M](iterOps,pred)
+        new scala.collection.IterableOps.WithFilter[A,Src](iterOps,pred)
 
-      def leftJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(A, Option[B])] = ???
+      def leftJoin[B](mb: Src[B])(on: (A, B) => Boolean): Src[(A, Option[B])] = ???
 
-      def fullJoin[B](mb: M[B])(on: (A, B) => Boolean): M[Ior[A, B]] = ???
+      def fullJoin[B](mb: Src[B])(on: (A, B) => Boolean): Src[Ior[A, B]] = ???
 
-      def distinct: M[A] = ma.mapValues(vs => ifac.from(vs.to(Seq).distinct))
+      def distinct: Src[A] = ma.mapValues(vs => ifac.from(vs.to(Seq).distinct))
 
-      def groupBy[K](f: A => K): M[(K, M[A])] =
-        ma.mapValues(vs => ifac.from(vs.groupBy(f).map[(K, M[A])]((k,v) => (k, ifac.from(v).asSource))))
+      def groupBy[K](f: A => K): Src[(K, Src[A])] =
+        ma.mapValues(vs => ifac.from(vs.groupBy(f).map[(K, Src[A])]((k,v) => (k, ifac.from(v).asSource))))
 
-    extension [A](a: A) def pure: M[A] = ifac(a).asSource
+    extension [A](a: A) def pure: Src[A] = ifac(a).asSource
 
     extension [A](a: A)
       @scala.annotation.nowarn def read: Read[R, S, A] =
         a match
           case s: (k, g) => (s._1, s._2.read)
-          case s: M[a] => ifac.from(s.merge.map(_.read))
+          case s: Src[a] => ifac.from(s.merge.map(_.read))
           case s: _ => a
 
     extension [A](ref: R[A])
-      override def insertMany[B](a: M[A])(returning: A => B): S[B] = 
+      override def insertMany[B](a: Src[A])(returning: A => B): S[B] = 
         ifac.from(refInsertMany(ref)(a.merge).map(returning))
 
-      override def insertMany(a: M[A]): Unit = 
+      override def insertMany(a: Src[A]): Unit = 
         refInsertMany(ref)(a.merge)
       def insert[B](a: A)(returning: A => B): B = 
         insertMany(a.pure)(returning).head
