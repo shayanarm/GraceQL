@@ -1,8 +1,6 @@
 package graceql.context.jdbc.postgres
 
-import scala.quoted.*
 import graceql.core.*
-import graceql.context.jdbc.JDBCCompiler
+import graceql.context.jdbc.{Tree, VendorTreeCompiler}
 
-
-object Compiler extends JDBCCompiler[PostgreSQL]
+object Compiler extends VendorTreeCompiler[PostgreSQL]

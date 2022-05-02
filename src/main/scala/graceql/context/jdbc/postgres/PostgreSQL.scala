@@ -1,6 +1,7 @@
 package graceql.context.jdbc.postgres
 
-final type PostgreSQL
+import graceql.core.*
+import graceql.context.jdbc.*
 
-object PostgreSQL:
-end PostgreSQL    
+final type PostgreSQL
+object PostgreSQL

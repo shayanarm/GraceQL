@@ -1,8 +1,6 @@
 package graceql.context.jdbc.mysql
 
-import scala.quoted.*
 import graceql.core.*
-import graceql.context.jdbc.JDBCCompiler
+import graceql.context.jdbc.*
 
-
-object Compiler extends JDBCCompiler[MySQL]
+object Compiler extends VendorTreeCompiler[MySQL]

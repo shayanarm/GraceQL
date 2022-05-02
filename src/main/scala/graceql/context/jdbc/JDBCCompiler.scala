@@ -1,16 +1,26 @@
 package graceql.context.jdbc
 
 import scala.quoted.*
-import graceql.core.Queryable
+import graceql.core.*
 import graceql.util.CompileOps
+import scala.annotation.targetName
 
-abstract class JDBCCompiler[V]:
+trait VendorTreeCompiler[V]:
+
   import CompileOps.*
-  def compile[S[+X] <: Iterable[X], A](e: Expr[Queryable[[x] =>> Table[V,x], S, [x] =>> String] ?=> A])(using q: Quotes): Expr[String] =
+
+  @targetName("compileScala")
+  def compile[V, S[+X] <: Iterable[X], A](
+      e: Expr[Queryable[[x] =>> Table[V, x], S, [x] =>> Tree] ?=> A]
+  )(using q: Quotes): Expr[Tree] =
     import q.reflect.*
     val pipe =
-        inlineDefs andThen
+      inlineDefs andThen
         betaReduceAll andThen
         inlineDefs
     logged(pipe)(e.asTerm).asExpr
     ???
+  @targetName("compileNative")
+  def compile[S[+X] <: Iterable[X], A](e: Expr[Tree])(using
+      q: Quotes
+  ): Expr[Tree] = ???

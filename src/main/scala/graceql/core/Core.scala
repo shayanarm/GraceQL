@@ -16,20 +16,20 @@ class GraceException(val message: Option[String] = None, val cause: Option[Throw
 
 class terminal extends scala.annotation.StaticAnnotation
 
-trait Execute[R[_], Binary[_], Connection, A, B]:
-  def apply(compiled: Binary[A], conn: Connection): B
+trait Execute[R[_], Native[_], Connection, A, B]:
+  def apply(compiled: Native[A], conn: Connection): B
 
 object Execute:
-  given execLifted[R[_], Binary[_], Connection, A, B, G[_]](using
-      execUnlifted: Execute[R, Binary, Connection, A, B],
+  given execLifted[R[_], Native[_], Connection, A, B, G[_]](using
+      execUnlifted: Execute[R, Native, Connection, A, B],
       run: RunLifted[G]
-  ): Execute[R, Binary, Connection, A, G[B]] with
-    def apply(compiled: Binary[A], conn: Connection): G[B] =
+  ): Execute[R, Native, Connection, A, G[B]] with
+    def apply(compiled: Native[A], conn: Connection): G[B] =
       run(() => execUnlifted(compiled, conn))
 
-class Exe[R[_], Binary[_], Connection, A](val compiled: Binary[A]):
+class Exe[R[_], Native[_], Connection, A](val compiled: Native[A]):
   inline def apply[B](using conn: Connection): B =
-    summonInline[Execute[R, Binary, Connection, A, B]].apply(compiled, conn)  
+    summonInline[Execute[R, Native, Connection, A, B]].apply(compiled, conn)  
   inline def as[C[_]](using Connection): C[A] =
     apply[C[A]]
   inline def run(using Connection): A = as[[x] =>> x]
@@ -40,44 +40,41 @@ class Exe[R[_], Binary[_], Connection, A](val compiled: Binary[A]):
   inline def either(using Connection): Either[Throwable, A] =
     as[[x] =>> Either[Throwable, x]]  
 
-trait Capabilities[C[_]]:
-  def fromBinary[A](bin: C[A]): A
-  protected def toBinary[A](a: A): C[A]
-  object function:
-    inline def nullary[A](inline f: C[A]): () => A = 
-      () => fromBinary(f)
-    inline def unary[A, B](inline f: C[A] => C[B]): A => B = 
-      a => fromBinary(f(toBinary(a)))
-    inline def binary[A1, A2, B](inline f: (C[A1], C[A2]) => C[B]): (A1, A2) => B = 
-      (a1, a2) => fromBinary(f(toBinary(a1), toBinary(a2)))
-    inline def ternary[A1, A2, A3, B](inline f: (C[A1], C[A2], C[A3]) => C[B]): (A1, A2, A3) => B =
-      (a1, a2, a3) => fromBinary(f(toBinary(a1), toBinary(a2), toBinary(a3)))
-    inline def quarternary[A1, A2, A3, A4, B](inline f: (C[A1], C[A2], C[A3], C[A4]) => C[B]): (A1, A2, A3, A4) => B =
-      (a1, a2, a3, a4) => fromBinary(f(toBinary(a1), toBinary(a2), toBinary(a3), toBinary(a4)))
+trait Parser[N[+_]]:
+  def apply[A](sc: StringContext)(splice: Any*): N[A]
+
+trait Capabilities[N[+_]]:
+  extension(bin: N[Any])(using parser: Parser[N])
+    inline def typed[A]: N[A] = parser[A](StringContext())(bin)
+  extension(sc: StringContext)(using parser: Parser[N])
+    inline def native(s: Any*): N[Any] = parser[Any](sc)(s*)
+
+  def fromNative[A](bin: N[A]): A
+  def toNative[A](a: A): N[A]
 
 trait Context[R[_]]:
   self =>
-  type Binary[A]
-  type Capabilities <: graceql.core.Capabilities[Binary]
+  type Native[+A]
+  type Capabilities <: graceql.core.Capabilities[Native]
   type Connection
 
-  final type Execute[A, B] = graceql.core.Execute[R, Binary, Connection, A, B]
+  final type Execute[A, B] = graceql.core.Execute[R, Native, Connection, A, B]
 
-  type Exe[A] <: graceql.core.Exe[R, Binary, Connection, A]
+  type Exe[A] <: graceql.core.Exe[R, Native, Connection, A]
 
-  inline def exe[A](compiled: Binary[A]): Exe[A]
+  protected def exe[A](compiled: Native[A]): Exe[A]
   
   inline def apply[A](inline query: Capabilities ?=> A): Exe[A] =
     exe(compile(query))
 
-  inline def compile[A](inline query: Capabilities ?=> A): Binary[A]
+  inline def compile[A](inline query: Capabilities ?=> A): Native[A]
 
 final type Read[R[_], M[_], T] = T match
   case (k, grpd)       => (k, Read[R, M, grpd])
   case Source[R, M, a] => M[Read[R, M, a]]
   case _               => T
 
-trait Queryable[R[_], M[+_], C[_]] extends SQLLike[[x] =>> Source[R, M, x]] with Capabilities[C]:
+trait Queryable[R[_], M[+_], N[+_]] extends SQLLike[[x] =>> Source[R, M, x]] with Capabilities[N]:
 
   extension [A](a: A)
     @terminal
@@ -114,16 +111,16 @@ trait Queryable[R[_], M[+_], C[_]] extends SQLLike[[x] =>> Source[R, M, x]] with
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>
 
-  final type Queryable = graceql.core.Queryable[R, M, Binary]
+  final type Queryable = graceql.core.Queryable[R, M, Native]
   final type Capabilities = Queryable
-  final class Exe[A](compiled: Binary[A]) extends graceql.core.Exe[R, Binary, Connection, A](compiled):
+  final class Exe[A](compiled: Native[A]) extends graceql.core.Exe[R, Native, Connection, A](compiled):
     type RowType = A match
       case M[a] => a
       case _    => A
     inline def transform[D[_]](using Connection)(using
         eq: A =:= M[RowType]
     ): D[RowType] =
-      // apply[M[RowType], D[RowType]](eq.liftCo[Binary](compiled))
+      // apply[M[RowType], D[RowType]](eq.liftCo[Native](compiled))
       apply[D[RowType]]
     inline def lazyList(using Connection)(using
         A =:= M[RowType]
@@ -133,9 +130,9 @@ trait QueryContext[R[_], M[+_]] extends Context[R]:
         A =:= M[RowType]
     ): LazyList[RowType] =
       lazyList
-  inline def exe[A](compiled: Binary[A]): Exe[A] = Exe(compiled)      
+  protected def exe[A](compiled: Native[A]): Exe[A] = Exe(compiled)      
 
-trait Definable[R[_], C[_]] extends Capabilities[C]:
+trait Definable[R[_], N[+_]] extends Capabilities[N]:
   extension[A](ref: R[A])
     def create(): Unit  
     def drop(): Unit
@@ -143,11 +140,11 @@ trait Definable[R[_], C[_]] extends Capabilities[C]:
 trait SchemaContext[R[_]] extends Context[R]:
   self =>
 
-  final type Definable = graceql.core.Definable[R, Binary]
+  final type Definable = graceql.core.Definable[R, Native]
   final type Capabilities = Definable
-  final type Exe[A] = graceql.core.Exe[R, Binary, Connection, A]
-  inline def exe[A](compiled: Binary[A]): Exe[A] =
-    graceql.core.Exe[R,Binary,Connection,A](compiled)
+  final type Exe[A] = graceql.core.Exe[R, Native, Connection, A]
+  protected def exe[A](compiled: Native[A]): Exe[A] =
+    graceql.core.Exe[R,Native,Connection,A](compiled)
 
 trait ACID[C]:
   def session(connection: C): C

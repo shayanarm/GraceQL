@@ -32,8 +32,8 @@ trait MemoryQueryContextImpl[R[_]]:
         Source.Values(ma.withValues(f))
       private inline def withValues[B](f: S[A] => B): B = f(ma.merge)
 
-    def fromBinary[A](bin: () => A): A = bin()
-    protected def toBinary[A](a: A): () => A = () => a
+    def fromNative[A](bin: () => A): A = bin()
+    def toNative[A](a: A): () => A = () => a
 
     extension [A](ma: Src[A])
 
@@ -115,7 +115,7 @@ trait MemoryQueryContextImpl[R[_]]:
   }
 
   given memoryQueryContext[S[+X] <: Iterable[X], R[_]](using sl: Queryable[R, S, [x] =>> () => x]): QueryContext[R, S] with
-    type Binary[A] = () => A
+    type Native[A] = () => A
     type Connection = DummyImplicit
     inline def compile[A](inline query: Queryable ?=> A): () => A =
       ${ Compiler.compile[A]('{query(using sl)}) }
