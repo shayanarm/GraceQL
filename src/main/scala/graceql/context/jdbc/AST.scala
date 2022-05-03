@@ -1,20 +1,18 @@
 package graceql.context.jdbc
 
-import graceql.core.Parser
+import graceql.core.*
 import scala.util.parsing.combinator._
 import scala.util.Try
 import graceql.core.GraceException
+import scala.quoted.Type
+import scala.quoted.Expr
 
-enum Lit:
-  case LChar(value: Char) extends Lit
-  case LByte(value: Byte) extends Lit
-  case LShort(value: Short) extends Lit
-  case LInt(value: Int) extends Lit
-  case LLong(value: Long) extends Lit
-  case LFloat(value: Float) extends Lit
-  case LDouble(value: Double) extends Lit
-  case LString(value: String) extends Lit
-  case LJSON(value: String) extends Lit
+case class Encoded[+A](val original: A, val run: () => String):
+  override def toString() = run()
+  override def equals(other: Any): Boolean =
+    other match
+      case Encoded(that,_) => original == that
+      case _ => super.equals(other)
 
 enum JoinType:
   case Inner extends JoinType
@@ -27,95 +25,82 @@ enum Order:
   case Asc extends Order
   case Desc extends Order
 
-enum Tree(childern: List[Tree]):
-  case Literal(value: Lit) extends Tree(Nil)
-  case Select(
+enum Node[L[_], T[_]](childern: List[Node[L, T]]):
+  case Literal[L[_], T[_], A](value: L[A]) extends Node[L, T](Nil)
+  case Select[L[_], T[_]](
       distinct: Boolean,
-      columns: Tree,
-      from: Tree,
-      joins: List[Tree],
-      where: Option[Tree],
-      groupBy: Option[Tree],
-      orderBy: List[Tree],
-      offset: Option[Int],
-      limit: Option[Int]
-  ) extends Tree(
+      columns: Node[L, T],
+      from: Node[L, T],
+      joins: List[Node[L, T]],
+      where: Option[Node[L, T]],
+      groupBy: Option[Node[L, T]],
+      orderBy: List[Node[L, T]],
+      offset: Option[L[Int]],
+      limit: Option[L[Int]]
+  ) extends Node[L, T](
         (from +: joins) ++ where ++ groupBy ++ orderBy
       )
-  case Star() extends Tree(Nil)
-  case Column(name: String) extends Tree(Nil)
-  case ColSet(columns: List[Tree]) extends Tree(columns)
-  case Table(table: String) extends Tree(Nil)
-  case Values(values: List[Tree]) extends Tree(values)
-  case Dual() extends Tree(Nil)
-  case As(tree: Tree, alias: String) extends Tree(List(tree))
-  case Ref(name: String) extends Tree(Nil)
-  case SelectCol(tree: Tree, prop: String) extends Tree(List(tree))
-  case Apply(name: String, args: List[Tree]) extends Tree(args)
-  case Cast(tpe: String) extends Tree(Nil)
-  case Join(joinType: JoinType, tree: Tree, on: Tree)
-      extends Tree(List(tree, on))
-  case GroupBy(by: List[Tree], having: Option[Tree]) extends Tree(by ++ having)
-  case Null() extends Tree(Nil)
-  case Union(left: Tree, right: Tree) extends Tree(List(left, right))
-  case Ordered(tree: Tree, order: Order) extends Tree(List(tree))
-  case Block(stmts: List[Tree]) extends Tree(stmts)
+  case Star() extends Node[L, T](Nil)
+  case Column(name: String) extends Node[L, T](Nil)
+  case Tuple[L[_], T[_]](columns: List[Node[L, T]]) extends Node[L, T](columns)
+  case Table[L[_], T[_], A](table: L[String], tpe: T[A]) extends Node[L, T](Nil)
+  case Values[L[_], T[_], A](values: L[Iterable[A]]) extends Node[L, T](Nil)
+  case Dual() extends Node[L, T](Nil)
+  case As[L[_], T[_]](tree: Node[L, T], alias: String) extends Node[L, T](List(tree))
+  case Ref(name: String) extends Node[L, T](Nil)
+  case SelectCol[L[_], T[_]](tree: Node[L, T], column: String) extends Node[L, T](List(tree))
+  case Apply[L[_], T[_], A](name: String, args: List[Node[L, T]], returnType: Type[A]) extends Node[L, T](args)
+  case Cast[L[_], T[_], A](tree: Node[L, T], tpe: Type[A]) extends Node[L, T](Nil)
+  case Join[L[_], T[_]](joinType: JoinType, tree: Node[L, T], on: Node[L, T])
+      extends Node[L, T](List(tree, on))
+  case GroupBy[L[_], T[_]](by: List[Node[L, T]], having: Option[Node[L, T]]) extends Node[L, T](by ++ having)
+  case Null() extends Node[L, T](Nil)
+  case Union[L[_], T[_]](left: Node[L, T], right: Node[L, T]) extends Node[L, T](List(left, right))
+  case Ordered[L[_], T[_]](tree: Node[L, T], order: Order) extends Node[L, T](List(tree))
+  case Block[L[_], T[_]](stmts: List[Node[L, T]]) extends Node[L, T](stmts)
 
-object Tree:
-  given Parser[[x] =>> Tree] with
+type Tree = Node[Encoded, [x] =>> Unit]  
+object Node:
+  given defualt[L[_],T[_]]:NativeSupport[[x] =>> Node[L, T]] with {}
 
-    def apply[A](sc: StringContext)(splices: Any*): Tree =
-      val placeholders = splices.indices.map(i => s":$i")
-      SQLParser(splices.toArray)(sc.raw(placeholders)).get
-
-class SQLParser(val args: Array[Any]) extends RegexParsers:
-  import Tree.*
+class SQLParser[L[_],T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
+  import Node.*
   object kw:
-    def select: Parser[String] = "(?i)select".r ^^ identity
-    def distinct: Parser[String] = "(?i)distinct".r ^^ identity
-    def from: Parser[String] = "(?i)from".r ^^ identity
-    def as: Parser[String] = "(?i)as".r ^^ identity
+    def select: Parser[String] = """(?i)select""".r ^^ identity
+    def distinct: Parser[String] = """(?i)distinct""".r ^^ identity
+    def from: Parser[String] = """(?i)from""".r ^^ identity
+    def as: Parser[String] = """(?i)as""".r ^^ identity
+    def dual: Parser[String] = """(?i)dual""".r ^^ identity
 
-  def sql: Parser[Tree] = rep1sep(query, ";".r) ^^ { r => Block(r) }
-  def query: Parser[Tree] = selectQuery // | update | delete | insert | create | drop
-  def selectQuery: Parser[Tree] = kw.select ~ kw.distinct.? ~ selectColumns ~ kw.from ~ src ^^ { case _ ~ distinct ~ colset ~ _ ~ from =>
+  def sql: Parser[Node[L, T]] = rep1sep(query, ";".r) ^^ { r => Block(r) }
+  def query: Parser[Node[L, T]] = selectQuery // | update | delete | insert | create | drop
+  def selectQuery: Parser[Node[L, T]] = (kw.select ~> kw.distinct.?) ~ selectColumns ~ (kw.from ~> src) ^^ { case distinct ~ colset ~ from =>
     Select(distinct.isDefined, colset, from, Nil, None, None, Nil, None, None)
   }
-  def selectColumns: Parser[Tree] = tuple(named(expr)) | star
-  def tuple(of: Parser[Tree]): Parser[Tree] = rep1sep(of, ",".r) ^^ { r =>
-    ColSet(r)
+  def selectColumns: Parser[Node[L, T]] = tuple(aliased(expr)) | star
+  def tuple(of: Parser[Node[L, T]]): Parser[Node[L, T]] = rep1sep(of, ",".r) ^^ { r =>
+    Tuple(r)
   }
-  def named(of: Parser[Tree]): Parser[Tree] = of ~ (kw.as.? ~ ident).? ^^ {
-    case o ~ Some(_ ~ i) => As(o, i)
+  def aliased(of: Parser[Node[L, T]]): Parser[Node[L, T]] = of ~ (kw.as.? ~> ident).? ^^ {
+    case o ~ Some(i) => As(o, i)
     case o ~ _           => o
   }
-  def star: Parser[Tree] = "\\*".r ^^ { _ => Star() }
-  def expr: Parser[Tree] = placeholder | named(selectQuery)
-  def src: Parser[Tree] = placeholder | named(selectQuery)
-  def ident: Parser[String] = "[a-zA-Z][a-ZA-Z0-9_]*".r ^^ identity
-  def ref: Parser[Tree] = ident ^^ { r => Ref(r) }
-  def placeholder: Parser[Tree] = ":/d".r ^^ { i => replaceWithValue(i.toInt) }
-  def update: Parser[Tree] = ???
-  def delete: Parser[Tree] = ???
-  def insert: Parser[Tree] = ???
-  def create: Parser[Tree] = ???
-  def drop: Parser[Tree] = ???
+  def star: Parser[Node[L, T]] = """\*""".r ^^ { _ => Star() }
+  def expr: Parser[Node[L, T]] = aliased(placeholder | selectQuery)
+  def src: Parser[Node[L, T]] = aliased(table | selectQuery) | dual
+  def dual: Parser[Node[L, T]] = kw.dual ^^ {_ => Dual()}
+  def ident: Parser[String] = """[a-zA-Z][a-zA-Z0-9_]*""".r ^^ identity
+  def ref: Parser[Node[L, T]] = ident ^^ { r => Ref(r) }
+  def placeholder: Parser[Node[L, T]] = (""":""".r ~> """\d""".r) ^^ { i => args(i.toInt) }
+  def table: Parser[Node[L, T]] = placeholder ^? ({case t: Table[_,_,_] => t}, t => s"Expected a \"Table\" reference, but found $t")
+  def update: Parser[Node[L, T]] = ???
+  def delete: Parser[Node[L, T]] = ???
+  def insert: Parser[Node[L, T]] = ???
+  def create: Parser[Node[L, T]] = ???
+  def drop: Parser[Node[L, T]] = ???
 
-  def apply(src: String): Try[Tree] =
+  def apply(src: String): Try[Node[L, T]] =
     parse(sql, src) match
         case Success(tree, _) => scala.util.Success(tree)
         case Error(msg, i) => scala.util.Failure(GraceException(msg))
         case Failure(msg, i) => scala.util.Failure(GraceException(msg))
-
-  private def replaceWithValue(i: Int): Tree =
-    args(i) match
-      case v: Char   => Literal(Lit.LChar(v))
-      case v: Byte   => Literal(Lit.LByte(v))
-      case v: Short  => Literal(Lit.LShort(v))
-      case v: Int    => Literal(Lit.LInt(v))
-      case v: Long   => Literal(Lit.LLong(v))
-      case v: Float  => Literal(Lit.LFloat(v))
-      case v: Double => Literal(Lit.LDouble(v))
-      case v: String => Literal(Lit.LString(v))
-      // case v: JSON => Literal(LJSON(v))
-      case v: graceql.context.jdbc.Table[_, _] => Tree.Table(v.name)

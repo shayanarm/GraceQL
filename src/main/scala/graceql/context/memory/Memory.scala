@@ -31,6 +31,13 @@ trait MemoryQueryContextImpl[R[_]]:
       private inline def mapValues[B](f: S[A] => S[B]) =
         Source.Values(ma.withValues(f))
       private inline def withValues[B](f: S[A] => B): B = f(ma.merge)
+  
+    private def absurd(using NativeSupport[[x] =>> () => x]) = throw GraceException("`in-memory` contexts do not have `NativeSupport`")
+
+    extension(bin: () => Any)(using NativeSupport[[x] =>> () => x])
+      def typed[A]: () => A = absurd
+    extension(sc: StringContext)(using NativeSupport[[x] =>> () => x])
+      def native(s: Any*): () => Any = absurd
 
     def fromNative[A](bin: () => A): A = bin()
     def toNative[A](a: A): () => A = () => a

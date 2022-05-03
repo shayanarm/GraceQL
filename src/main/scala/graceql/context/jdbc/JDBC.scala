@@ -5,7 +5,15 @@ import java.sql.{Connection => JConnection}
 
 case class Table[V, +A](name: String)
 
-trait JDBCContext[V, S[+X] <: Iterable[X]] extends QueryContext[[x] =>> Table[V, x], S]:
+trait JDBCQueryContext[V, S[+X] <: Iterable[X]] extends QueryContext[[x] =>> Table[V, x], S]:
+
+  final type Tree = graceql.context.jdbc.Tree 
+
+  type Native[+A] = Tree
+
+  type Connection = JConnection
+
+trait JDBCSchemaContext[V] extends SchemaContext[[x] =>> Table[V, x]]:
 
   final type Tree = graceql.context.jdbc.Tree 
 

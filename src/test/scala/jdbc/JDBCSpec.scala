@@ -7,7 +7,7 @@ import java.sql.*;
 import scala.util.Try
 import graceql.*
 import graceql.core.*
-import graceql.context.memory.*
+import graceql.context.jdbc.*
 import graceql.data.Source
 import scala.compiletime.summonInline
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -17,13 +17,13 @@ import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
 
-abstract class JDBCSpec(
+trait JDBCSpec[V](
     val vendor: String,
     val url: String,
     val user: Option[String],
     val password: String,
     val driver: Driver
-) extends AnyFlatSpec
+)(using qc: QueryContext[[x] =>> Table[V,x], Seq], sc: SchemaContext[[x] =>> Table[V,x]]) extends AnyFlatSpec
     with should.Matchers {
 
   def connect(): Connection =

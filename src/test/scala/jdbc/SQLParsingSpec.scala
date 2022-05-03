@@ -19,17 +19,53 @@ import java.util.concurrent.TimeUnit
 
 class SQLParsingSpec extends AnyFlatSpec with should.Matchers {
   case class User(name: String)
-  val users = Table[Nothing, User]("users")
-
-  //To enable the `native` string context syntax
-  given Capabilities[[x] =>> Tree] with {
-    def fromNative[A](bin: Tree): A = ???
-    def toNative[A](a: A): Tree = ???
-  }
+  val users = Table[AnySQL, User]("users")
 
   s"""
   Using raw SQL, I
   """ should "be able to parse a select query from a single table" in {
-    println(native"SELECT * FROM $users")
+    noException should be thrownBy {
+      query[[x] =>> Table[AnySQL, x], Iterable] {
+        fromNative {
+          native"SELECT * FROM $users AS u"
+        }
+      }
+    }
+  }
+
+  it should "be able to parse a multiline query" in {
+    noException should be thrownBy {
+      query[[x] =>> Table[AnySQL, x], Iterable] {
+        fromNative {
+          native"""
+            SELECT
+            *
+            FROM
+            $users
+            AS
+            u"""
+        }
+      }
+    }
+  }
+
+  it should "be able to parse a \"SELECT DISTINCT\" query" in {
+    noException should be thrownBy {
+      query[[x] =>> Table[AnySQL, x], Iterable] {
+        fromNative {
+          native"SELECT DISTINCT * FROM $users AS u"
+        }
+      }
+    }
+  }
+
+  it should "be able to parse any keyword without case sensitivity" in {
+    noException should be thrownBy {
+      query[[x] =>> Table[AnySQL, x], Iterable] {
+        fromNative {
+          native"SeLeCt * fROm $users As u"
+        }
+      }
+    }
   }
 }

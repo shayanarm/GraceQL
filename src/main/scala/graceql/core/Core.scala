@@ -40,21 +40,20 @@ class Exe[R[_], Native[_], Connection, A](val compiled: Native[A]):
   inline def either(using Connection): Either[Throwable, A] =
     as[[x] =>> Either[Throwable, x]]  
 
-trait Parser[N[+_]]:
-  def apply[A](sc: StringContext)(splice: Any*): N[A]
+trait NativeSupport[N[+_]]
 
 trait Capabilities[N[+_]]:
-  extension(bin: N[Any])(using parser: Parser[N])
-    inline def typed[A]: N[A] = parser[A](StringContext())(bin)
-  extension(sc: StringContext)(using parser: Parser[N])
-    inline def native(s: Any*): N[Any] = parser[Any](sc)(s*)
+  extension(bin: N[Any])(using NativeSupport[N])
+    def typed[A]: N[A]
+  extension(sc: StringContext)(using NativeSupport[N])
+    def native(s: Any*): N[Any]
 
   def fromNative[A](bin: N[A]): A
   def toNative[A](a: A): N[A]
 
 trait Context[R[_]]:
   self =>
-  type Native[+A]
+  type Native[+A] 
   type Capabilities <: graceql.core.Capabilities[Native]
   type Connection
 
