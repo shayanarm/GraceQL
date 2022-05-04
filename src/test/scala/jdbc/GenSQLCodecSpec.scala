@@ -66,17 +66,17 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse literal columns inside the select clause" in {
     parseAssert {
-      native"SELECT ${1}, ${2} FROM $users AS u"
+      native"SELECT ${1}, ${"foo"} FROM $users AS u"
     }{
-      "SELECT 1, 2 FROM users AS u;"
+      "SELECT 1, \"foo\" FROM users AS u;"
     }
   }
 
   it should "parse named columns inside the select clause" in {
     parseAssert {
-      native"SELECT ${1} a1, ${2} AS a2 FROM $users AS u"
+      native"SELECT ${1} a1, ${"foo"} AS a2 FROM $users AS u"
     }{
-      "SELECT 1 AS a1, 2 AS a2 FROM users AS u;"
+      "SELECT 1 AS a1, \"foo\" AS a2 FROM users AS u;"
     }
   }
 

@@ -26,7 +26,7 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
     @targetName("doubleLit")
     def lit(l: Expr[Double])(using Quotes): Expr[String] = '{ $l.toString }
     @targetName("stringLit")
-    def lit(l: Expr[String])(using Quotes): Expr[String] = l
+    def lit(l: Expr[String])(using Quotes): Expr[String] = '{s"\"${$l.replace("\"","")}\""}
     def alias(l: Expr[String])(using Quotes): Expr[String] = l
     def tableName(l: Expr[String])(using Quotes): Expr[String] = l
   override protected def compileNative[C[X[+_]] <: Capabilities[X], S[+X] <: Iterable[X], A](
