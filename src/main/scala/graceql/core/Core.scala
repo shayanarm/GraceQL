@@ -16,28 +16,28 @@ class GraceException(val message: Option[String] = None, val cause: Option[Throw
 
 class terminal extends scala.annotation.StaticAnnotation
 
-trait Execute[R[_], Native[_], Connection, A, B]:
-  def apply(compiled: Native[A], conn: Connection): B
+trait Execute[R[_], N[_], C, A, B]:
+  def apply(compiled: N[A], conn: C): B
 
 object Execute:
-  given execLifted[R[_], Native[_], Connection, A, B, G[_]](using
-      execUnlifted: Execute[R, Native, Connection, A, B],
+  given execLifted[R[_], N[_], C, A, B, G[_]](using
+      execUnlifted: Execute[R, N, C, A, B],
       run: RunLifted[G]
-  ): Execute[R, Native, Connection, A, G[B]] with
-    def apply(compiled: Native[A], conn: Connection): G[B] =
+  ): Execute[R, N, C, A, G[B]] with
+    def apply(compiled: N[A], conn: C): G[B] =
       run(() => execUnlifted(compiled, conn))
 
-class Exe[R[_], Native[_], Connection, A](val compiled: Native[A]):
-  inline def apply[B](using conn: Connection): B =
-    summonInline[Execute[R, Native, Connection, A, B]].apply(compiled, conn)  
-  inline def as[C[_]](using Connection): C[A] =
+class Exe[R[_], N[_], C, A](val compiled: N[A]):
+  inline def apply[B](using conn: C): B =
+    summonInline[Execute[R, N, C, A, B]].apply(compiled, conn)  
+  inline def as[C[_]](using C): C[A] =
     apply[C[A]]
-  inline def run(using Connection): A = as[[x] =>> x]
-  inline def future(using Connection): Future[A] = as[Future]
-  inline def promise(using Connection): Promise[A] = as[Promise]
-  inline def asTry(using Connection): Try[A] = as[Try]
-  inline def option(using Connection): Option[A] = as[Option]
-  inline def either(using Connection): Either[Throwable, A] =
+  inline def run(using C): A = as[[x] =>> x]
+  inline def future(using C): Future[A] = as[Future]
+  inline def promise(using C): Promise[A] = as[Promise]
+  inline def asTry(using C): Try[A] = as[Try]
+  inline def option(using C): Option[A] = as[Option]
+  inline def either(using C): Either[Throwable, A] =
     as[[x] =>> Either[Throwable, x]]  
 
 trait NativeSupport[N[+_]]
