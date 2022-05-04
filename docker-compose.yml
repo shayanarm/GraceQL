@@ -24,10 +24,10 @@ services:
       - mysql
     networks:
       - grace
-    ulimits:
-      nofile:
-        soft: "99999"
-        hard: "99999"      
+    # ulimits:
+    #   nofile:
+    #     soft: "99999"
+    #     hard: "99999"      
     tty: true
     stdin_open: true      
       

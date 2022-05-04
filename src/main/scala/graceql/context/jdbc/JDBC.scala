@@ -1,29 +1,31 @@
 package graceql.context.jdbc
 
 import graceql.core.*
-import java.sql.{Connection => JConnection}
+import java.sql.{Connection => JConnection, Statement => _}
+import java.sql.ResultSet
 
 case class Table[V, +A](name: String)
 
-trait JDBCQueryContext[V, S[+X] <: Iterable[X]] extends QueryContext[[x] =>> Table[V, x], S]:
+class Statement[+A](val tree: Tree, val parse: ResultSet => A):
+  override def toString() = tree.printer.compact
+object Statement:
+  given NativeSupport[Statement] with {}  
 
-  final type Tree = graceql.context.jdbc.Tree 
+trait JDBCQueryContext[V, S[+X] <: Iterable[X]] extends QueryContext[[x] =>> Table[V, x], S]: 
 
-  type Native[+A] = Tree
+  type Native[+A] = Statement[A]
 
   type Connection = JConnection
 
-trait JDBCSchemaContext[V] extends SchemaContext[[x] =>> Table[V, x]]:
+trait JDBCSchemaContext[V] extends SchemaContext[[x] =>> Table[V, x]]: 
 
-  final type Tree = graceql.context.jdbc.Tree 
-
-  type Native[+A] = Tree
+  type Native[+A] = Statement[A]
 
   type Connection = JConnection
 
 
 object Table:
 
-  given execSync[V, A, L, T]: Execute[[x] =>> Table[V, x], [x] =>> Tree, JConnection, A, A] with
-    def apply(compiled: Tree, conn: JConnection): A = ???
+  given execSync[V, A, L, T]: Execute[[x] =>> Table[V, x], Statement, JConnection, A, A] with
+    def apply(compiled: Statement[A], conn: JConnection): A = ???
 

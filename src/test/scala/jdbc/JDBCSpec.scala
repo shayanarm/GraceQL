@@ -43,7 +43,9 @@ trait JDBCSpec[V](
   Connecting to the $vendor vendor using url: ${url}, user: ${user.orNull}, and pass: ${password}
   """ should "succeed" in {
     noException should be thrownBy {
-      withConnection {}
+      // withConnection { c ?=>
+        // val i: Int = c.createStatement()
+      // }
     }
   }
 

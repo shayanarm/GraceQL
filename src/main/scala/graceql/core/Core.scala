@@ -45,8 +45,12 @@ trait NativeSupport[N[+_]]
 trait Capabilities[N[+_]]:
   extension(bin: N[Any])(using NativeSupport[N])
     def typed[A]: N[A]
+  
   extension(sc: StringContext)(using NativeSupport[N])
     def native(s: Any*): N[Any]
+  
+  extension[A](a: => A)
+    inline def |>[B](f: A => B) = f(a)
 
   def fromNative[A](bin: N[A]): A
   def toNative[A](a: A): N[A]
@@ -119,7 +123,6 @@ trait QueryContext[R[_], M[+_]] extends Context[R]:
     inline def transform[D[_]](using Connection)(using
         eq: A =:= M[RowType]
     ): D[RowType] =
-      // apply[M[RowType], D[RowType]](eq.liftCo[Native](compiled))
       apply[D[RowType]]
     inline def lazyList(using Connection)(using
         A =:= M[RowType]
