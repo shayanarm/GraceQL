@@ -30,8 +30,8 @@ object Execute:
 class Exe[R[_], N[_], C, A](val compiled: N[A]):
   inline def apply[B](using conn: C): B =
     summonInline[Execute[R, N, C, A, B]].apply(compiled, conn)  
-  inline def as[C[_]](using C): C[A] =
-    apply[C[A]]
+  inline def as[G[_]](using C): G[A] =
+    apply[G[A]]
   inline def run(using C): A = as[[x] =>> x]
   inline def future(using C): Future[A] = as[Future]
   inline def promise(using C): Promise[A] = as[Promise]
