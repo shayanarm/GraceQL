@@ -16,7 +16,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
 
-class GenSQLParsingSpec extends AnyFlatSpec with should.Matchers {
+class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   case class User(name: String)
   val users = Table[GenSQL, User]("users")
 
@@ -30,7 +30,7 @@ class GenSQLParsingSpec extends AnyFlatSpec with should.Matchers {
       parseAssert { 
         native"SELECT * FROM $users AS u"
       }{
-        "SELECT * FROM users AS u"
+        "SELECT * FROM users AS u;"
       }
   }
 
@@ -44,7 +44,7 @@ class GenSQLParsingSpec extends AnyFlatSpec with should.Matchers {
             AS
             u"""
       }{
-        "SELECT * FROM users AS u"
+        "SELECT * FROM users AS u;"
       }
   }
 
@@ -52,7 +52,7 @@ class GenSQLParsingSpec extends AnyFlatSpec with should.Matchers {
     parseAssert{
       native"SELECT DISTINCT * FROM $users AS u"
     }{
-      "SELECT DISTINCT * FROM users AS u"
+      "SELECT DISTINCT * FROM users AS u;"
     }
   }
 
@@ -60,7 +60,7 @@ class GenSQLParsingSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"SeLeCt * fROm $users As u"
     }{
-      "SELECT * FROM users AS u"
+      "SELECT * FROM users AS u;"
     }
   }
 
@@ -68,7 +68,7 @@ class GenSQLParsingSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"SELECT ${1}, ${2} FROM $users AS u"
     }{
-      "SELECT 1, 2 FROM users AS u"
+      "SELECT 1, 2 FROM users AS u;"
     }
   }
 
@@ -76,8 +76,31 @@ class GenSQLParsingSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"SELECT ${1} a1, ${2} AS a2 FROM $users AS u"
     }{
-      "SELECT 1 AS a1, 2 AS a2 FROM users AS u"
+      "SELECT 1 AS a1, 2 AS a2 FROM users AS u;"
+    }
+  }
+
+  it should "parse multiple statements" in {
+    parseAssert {
+      native"SELECT * FROM $users; SELECT * FROM $users"
+    }{
+      "SELECT * FROM users; SELECT * FROM users;"
     }
   }
   
+  it should "parse a literal integer as valid SQL expression" in {
+    parseAssert {
+      native"${1}"
+    }{
+      "1"
+    }
+  }
+
+  it should "parse a simple arithmetic expression" in {
+    parseAssert {
+      native"${2} + ${2}"
+    }{
+      "2 + 2"
+    }
+  }
 }
