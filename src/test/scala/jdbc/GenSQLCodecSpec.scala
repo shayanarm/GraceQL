@@ -20,9 +20,9 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   case class User(name: String)
   val users = Table[GenSQL, User]("users")
 
-  inline def parseAssert[A](inline src: Capabilities[Statement] ?=> Statement[A])(expected: String) = 
-    val stmt = query[[x] =>> Table[GenSQL, x], Iterable] { fromNative { src } }
-    assert(stmt.compiled.tree.printer.compact == expected)
+  inline def parseAssert[A](inline src: Capabilities[DBIO] ?=> DBIO[A])(expected: String) = 
+    val dbio = query[[x] =>> Table[GenSQL, x], Iterable] { fromNative { src } }
+    assert(dbio.compiled.underlying == expected)
 
   s"""
   Using raw SQL, the JDBC context
@@ -30,11 +30,11 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
       parseAssert { 
         native"SELECT * FROM $users AS u"
       }{
-        "SELECT * FROM users AS u;"
+        "SELECT * FROM users AS u"
       }
   }
 
-  it should "parse a multiline query" in {
+  it should "parse a multiline query" in { 
       parseAssert { 
           native"""
             SELECT
@@ -44,7 +44,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
             AS
             u"""
       }{
-        "SELECT * FROM users AS u;"
+        "SELECT * FROM users AS u"
       }
   }
 
@@ -52,7 +52,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     parseAssert{
       native"SELECT DISTINCT * FROM $users AS u"
     }{
-      "SELECT DISTINCT * FROM users AS u;"
+      "SELECT DISTINCT * FROM users AS u"
     }
   }
 
@@ -60,7 +60,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"SeLeCt * fROm $users As u"
     }{
-      "SELECT * FROM users AS u;"
+      "SELECT * FROM users AS u"
     }
   }
 
@@ -68,7 +68,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"SELECT ${1}, ${"foo"} FROM $users AS u"
     }{
-      "SELECT 1, \"foo\" FROM users AS u;"
+      "SELECT 1, \"foo\" FROM users AS u"
     }
   }
 
@@ -76,7 +76,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"SELECT ${1} a1, ${"foo"} AS a2 FROM $users AS u"
     }{
-      "SELECT 1 AS a1, \"foo\" AS a2 FROM users AS u;"
+      "SELECT 1 AS a1, \"foo\" AS a2 FROM users AS u"
     }
   }
 
@@ -101,6 +101,14 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
       native"${2} + ${2}"
     }{
       "2 + 2"
+    }
+  }
+
+  it should "parse a simple nested expression" in {
+    parseAssert {
+      native"select * FROM ${native"SELECT * FROM DUAL"}"
+    }{
+      "SELECT * FROM SELECT * FROM DUAL"
     }
   }
 }

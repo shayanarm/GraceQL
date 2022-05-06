@@ -43,6 +43,7 @@ class Exe[R[_], N[_], C, A](val compiled: N[A]):
 trait NativeSupport[N[+_]]
 
 trait Capabilities[N[+_]]:
+  
   extension(bin: N[Any])(using NativeSupport[N])
     def typed[A]: N[A]
   
@@ -77,7 +78,7 @@ final type Read[R[_], M[_], T] = T match
   case Source[R, M, a] => M[Read[R, M, a]]
   case _               => T
 
-trait Queryable[R[_], M[+_], N[+_]] extends SQLLike[[x] =>> Source[R, M, x]] with Capabilities[N]:
+trait Queryable[R[_], M[+_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] with Capabilities[N]:
 
   extension [A](a: A)
     @terminal

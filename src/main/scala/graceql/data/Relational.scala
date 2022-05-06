@@ -1,6 +1,6 @@
 package graceql.data
 
-trait SQLLike[M[_]] extends MonadZero[M] with MonadPlus[M]:
+trait Relational[M[_]] extends MonadZero[M] with MonadPlus[M]:
   extension [A](ma: M[A])
 
     def size: Int

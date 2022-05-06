@@ -29,28 +29,19 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
     def lit(l: Expr[String])(using Quotes): Expr[String] = '{s"\"${$l.replace("\"","")}\""}
     def alias(l: Expr[String])(using Quotes): Expr[String] = l
     def tableName(l: Expr[String])(using Quotes): Expr[String] = l
-  override protected def compileNative[C[X[+_]] <: Capabilities[X], S[+X] <: Iterable[X], A](
-      expr: Expr[C[Statement] => A]
-  )(using
-      q: Quotes,
-      tv: Type[GenSQL],
-      tc: Type[C],
-      ta: Type[A],
-      ts: Type[S],
-  ): Node[Expr,Type] =
-    import q.reflect.{Tree => _, Statement => _, *}
-    val e = preprocess(expr)
-    e match
-      case '{ (ev: C[Statement]) =>
-            ev.fromNative(
-              ev.native($sc: StringContext)(using $ns: NativeSupport[Statement])(${ Varargs(args) }: _*)
-            )
-          } =>
-        parseNative(args)(sc)
-      case _ =>
-        throw Exception(
-          s"""
-          Only direct 'fromNative' call followed by the 'native' interpolator are allowed for this test spec.
-          Found tree was: ${e.asTerm.show(using Printer.TreeAnsiCode)}
-          """
-        )
+  
+  // override protected def toNative[C[X[+_]] <: Capabilities[X], S[+X] <: Iterable[X], A](e: Expr[A])(using q: Quotes, tv: Type[GenSQL], tc: Type[C], ta: Type[A], ts: Type[S]): Node[Expr,Type] = 
+  //   import q.reflect.{Tree => _, *}
+  //   e match
+  //     case '{ (ev: C[DBIO]) =>
+  //           ev.fromNative(ev.native($sc: StringContext)(using $ns: NativeSupport[DBIO])($args: _*))
+  //         } =>
+  //           super.toNative[C,S,A](e)
+  //     case _ =>
+  //       throw Exception(
+  //         s"""
+  //         Only direct 'fromNative' call followed by the 'native' interpolator are allowed for this test spec.
+  //         Found tree was: ${e.asTerm.show(using Printer.TreeAnsiCode)}
+  //         """
+  //       )
+
