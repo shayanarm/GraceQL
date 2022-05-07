@@ -18,31 +18,31 @@ import java.util.concurrent.TimeUnit
 
 class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   case class User(name: String)
-  val users = Table[GenSQL, User]("users")
+  val users: Table[GenSQL, User] = Table[GenSQL, User]("users")
 
-  inline def parseAssert[A](inline src: Capabilities[DBIO] ?=> DBIO[A])(expected: String) = 
-    val dbio = query[[x] =>> Table[GenSQL, x], Iterable] { fromNative { src } }
+  inline def parseAssert[A](inline src: Queryable[[x] =>> Table[GenSQL, x], Iterable, DBIO] ?=> A)(expected: String) = 
+    val dbio = query[[x] =>> Table[GenSQL, x], Iterable] { q ?=> src(using q) }
     assert(dbio.compiled.underlying == expected)
 
   s"""
   Using raw SQL, the JDBC context
   """ should "parse a select query from a single table" in {
-      parseAssert { 
-        native"SELECT * FROM $users AS u"
+      parseAssert {
+          native"SELECT * FROM ${users} AS u".unlift
       }{
         "SELECT * FROM users AS u"
       }
   }
 
   it should "parse a multiline query" in { 
-      parseAssert { 
-          native"""
+      parseAssert {
+            native"""
             SELECT
             *
             FROM
             $users
             AS
-            u"""
+            u""".unlift
       }{
         "SELECT * FROM users AS u"
       }
@@ -50,7 +50,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse a \"SELECT DISTINCT\" query" in {
     parseAssert{
-      native"SELECT DISTINCT * FROM $users AS u"
+        native"SELECT DISTINCT * FROM $users AS u".unlift
     }{
       "SELECT DISTINCT * FROM users AS u"
     }
@@ -58,7 +58,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse any keyword without case sensitivity" in {
     parseAssert {
-      native"SeLeCt * fROm $users As u"
+        native"SeLeCt * fROm $users As u".unlift
     }{
       "SELECT * FROM users AS u"
     }
@@ -66,7 +66,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse literal columns inside the select clause" in {
     parseAssert {
-      native"SELECT ${1}, ${"foo"} FROM $users AS u"
+        native"SELECT ${1}, ${"foo"} FROM $users AS u".unlift
     }{
       "SELECT 1, \"foo\" FROM users AS u"
     }
@@ -74,7 +74,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse named columns inside the select clause" in {
     parseAssert {
-      native"SELECT ${1} a1, ${"foo"} AS a2 FROM $users AS u"
+        native"SELECT ${1} a1, ${"foo"} AS a2 FROM $users AS u".unlift
     }{
       "SELECT 1 AS a1, \"foo\" AS a2 FROM users AS u"
     }
@@ -82,7 +82,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse multiple statements" in {
     parseAssert {
-      native"SELECT * FROM $users; SELECT * FROM $users"
+        native"SELECT * FROM $users; SELECT * FROM $users".unlift
     }{
       "SELECT * FROM users; SELECT * FROM users;"
     }
@@ -90,7 +90,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   
   it should "parse a literal integer as valid SQL expression" in {
     parseAssert {
-      native"${1}"
+        native"${1}".unlift
     }{
       "1"
     }
@@ -98,17 +98,33 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse a simple arithmetic expression" in {
     parseAssert {
-      native"${2} + ${2}"
+        native"${2} + ${2}".unlift
     }{
       "2 + 2"
     }
   }
 
-  it should "parse a simple nested expression" in {
+  it should "parse a simple typed native query" in {
     parseAssert {
-      native"select * FROM ${native"SELECT * FROM DUAL"}"
+        native"SELECT * FROM DUAL".typed[Unit].unlift
     }{
-      "SELECT * FROM SELECT * FROM DUAL"
+      "SELECT * FROM DUAL"
+    }
+  }
+
+  it should "parse nested native queries" in {
+    parseAssert {
+        native"SELECT * FROM ${native"SELECT * FROM ${native"SELECT * FROM DUAL".unlift}".unlift}".unlift
+    }{
+      "SELECT * FROM SELECT * FROM SELECT * FROM DUAL"
+    }
+  }
+
+  it should "only allow parsing native query followed by unlift" in {
+    parseAssert {
+        native"select * from dual".typed[Int].unlift
+    }{
+      "SELECT * FROM DUAL"
     }
   }
 }

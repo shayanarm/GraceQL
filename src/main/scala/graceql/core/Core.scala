@@ -42,24 +42,23 @@ class Exe[R[_], N[_], C, A](val compiled: N[A]):
 
 trait NativeSupport[N[+_]]
 
-trait Capabilities[N[+_]]:
-  
-  extension(bin: N[Any])(using NativeSupport[N])
-    def typed[A]: N[A]
+trait Capabilities[+C[X[+_]] <: Capabilities[C, X], N[+_]]:
+  self: C[N] =>
+  extension[A](bin: N[A])(using NativeSupport[N])
+    def typed[B]: N[B]
+    def unlift: A    
   
   extension(sc: StringContext)(using NativeSupport[N])
-    def native(s: Any*): N[Any]
+    def native(s: (C[N] ?=> Any)*): N[Any]
   
-  extension[A](a: => A)
+  extension[A](a: A)
+    def lift: N[A]    
     inline def |>[B](f: A => B) = f(a)
-
-  def fromNative[A](bin: N[A]): A
-  def toNative[A](a: A): N[A]
 
 trait Context[R[_]]:
   self =>
   type Native[+A] 
-  type Capabilities <: graceql.core.Capabilities[Native]
+  type Capabilities
   type Connection
 
   final type Execute[A, B] = graceql.core.Execute[R, Native, Connection, A, B]
@@ -78,7 +77,7 @@ final type Read[R[_], M[_], T] = T match
   case Source[R, M, a] => M[Read[R, M, a]]
   case _               => T
 
-trait Queryable[R[_], M[+_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] with Capabilities[N]:
+trait Queryable[R[_], M[_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] with Capabilities[[x[+_]] =>> Queryable[R,M,x],N]:
 
   extension [A](a: A)
     @terminal
@@ -135,7 +134,7 @@ trait QueryContext[R[_], M[+_]] extends Context[R]:
       lazyList
   protected def exe[A](compiled: Native[A]): Exe[A] = Exe(compiled)      
 
-trait Definable[R[_], N[+_]] extends Capabilities[N]:
+trait Definable[R[_], N[+_]] extends Capabilities[[x[+_]] =>> Definable[R,x], N]:
   extension[A](ref: R[A])
     def create(): Unit  
     def drop(): Unit

@@ -71,6 +71,12 @@ enum Node[L[_], T[_]](childern: List[Node[L, T]]):
 
 type Tree = Node[[x] =>> String, [x] =>> Unit]
 
+object Node:
+  def parse[L[_],T[_]](sc: StringContext)(args: Seq[Node[L, T]]): Try[Node[L,T]] =
+    val placeholders = args.indices.map(i => s":$i")
+    val raw = sc.raw(placeholders*)
+    SQLParser(args.toArray).apply(raw)
+
 class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   private type N = Node[L, T]
   import Node.*

@@ -34,13 +34,14 @@ trait MemoryQueryContextImpl[R[_]]:
   
     private def absurd(using NativeSupport[[x] =>> () => x]) = throw GraceException("`in-memory` contexts do not have `NativeSupport`")
 
-    extension(bin: () => Any)(using NativeSupport[[x] =>> () => x])
-      def typed[A]: () => A = absurd
-    extension(sc: StringContext)(using NativeSupport[[x] =>> () => x])
-      def native(s: Any*): () => Any = absurd
+    extension[A](bin: () => A)(using NativeSupport[[x] =>> () => x])
+      def typed[B]: () => B = absurd
+      def unlift: A = absurd
+    extension[A](a: A)
+      def lift: () => A = () => a
 
-    def fromNative[A](bin: () => A): A = bin()
-    def toNative[A](a: A): () => A = () => a
+    extension(sc: StringContext)(using NativeSupport[[x] =>> () => x])
+      def native(s: (Queryable[R,S,[x] =>> () => x] ?=> Any)*): () => Any = absurd
 
     extension [A](ma: Src[A])
 
