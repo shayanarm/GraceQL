@@ -23,7 +23,7 @@ trait JDBCSpec[V](
     val user: Option[String],
     val password: String,
     val driver: Driver
-)(using qc: QueryContext[[x] =>> Table[V,x], Seq], sc: SchemaContext[[x] =>> Table[V,x]]) extends AnyFlatSpec
+)(using qc: QueryContext[[x] =>> Table[V,x], Seq]) extends AnyFlatSpec
     with should.Matchers {
 
   def connect(): Connection =

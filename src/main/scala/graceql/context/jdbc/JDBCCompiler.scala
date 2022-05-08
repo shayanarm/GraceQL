@@ -10,7 +10,7 @@ import scala.collection.immutable.ArraySeq
 trait VendorTreeCompiler[V]:
   val encoders: Encoders
 
-  def compileDML[S[+X] <: Iterable[X], A](
+  def compile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
   )(using
       q: Quotes,
@@ -22,18 +22,7 @@ trait VendorTreeCompiler[V]:
     e match
       case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
         PolymorphicCompiler[V, S](encoders)
-          .compileAll[Queryable[[X] =>> Table[V, X], S, DBIO], A](body)
-
-  def compileDDL[A](e: Expr[Definable[[x] =>> Table[V, x], DBIO] ?=> A])(using
-      q: Quotes,
-      ta: Type[A],
-      tv: Type[V]
-  ): Expr[DBIO[A]] =
-    import q.reflect.{Statement => _, *}
-    e match
-      case '{ (c: Definable[[X] =>> Table[V, X], DBIO]) ?=> $body(c): A } =>
-        PolymorphicCompiler[V, Iterable](encoders)
-          .compileAll[Definable[[x] =>> Table[V, x], DBIO], A](body)
+          .compile[A](body)
 
 trait Encoders:
   @targetName("booleanLit")
@@ -63,10 +52,8 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
     ts: Type[S]
 ):
   type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
-  type D = Definable[[x] =>> Table[V, x], DBIO]
 
   given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
-  given Type[D] = Type.of[Definable[[x] =>> Table[V, x], DBIO]]
 
   import q.reflect.{Tree => _, Select => _, Block => _, Literal => _, *}
   import CompileOps.*
@@ -80,68 +67,62 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
         inlineDefs
     pipe(e.asTerm).asExprOf[A]
 
-  def compileAll[C, A](expr: Expr[C => A])(using
-      tc: Type[C],
+  def compile[A](expr: Expr[Q => A])(using
       ta: Type[A]
   ): Expr[DBIO[A]] =
     val pipe =
-      preprocess[C => A] andThen
+      preprocess[Q => A] andThen
+        appliedToNull[A] andThen      
         toNative andThen
         encodedTree andThen
         adaptSupport andThen
         toDBIO[A]
     pipe(expr)
+  private def appliedToNull[A](expr: Expr[Q => A])(using Type[A]): Expr[A] =
+    import q.reflect.*
+    expr match
+      case '{(c: Q) => $b: A} => b
+      case '{(c: Q) => $b(c): A} =>
+            val applied = new TreeMap {
+              override def transformTerm(term: Term)(owner: Symbol): Term = 
+                super.transformTerm(term)(owner) match
+                  case id: Ident if id.tpe <:< TypeRepr.of[Q] => 
+                    '{PolymorphicCompiler.placeholder[Q]}.asExprOf[Q].asTerm
+                  case t => t
+            }.transformTerm(expr.asTerm)(Symbol.spliceOwner)
+            applied.asExprOf[Q => A] match
+              case '{(c: Q) => $b: A} => b
 
   protected def toNative[A](
       e: Expr[A]
   )(using ta: Type[A]): Node[Expr, Type] =
     import q.reflect.{Tree => _, *}
 
-    e match
-      case '{ (c: Q) => $a: x } =>
-        a match
-          case '{ $v: Boolean } => Node.Literal(v)
-          case '{ $v: Char }    => Node.Literal(v)
-          case '{ $v: Byte }    => Node.Literal(v)
-          case '{ $v: Short }   => Node.Literal(v)
-          case '{ $v: Int }     => Node.Literal(v)
-          case '{ $v: Long }    => Node.Literal(v)
-          case '{ $v: Float }   => Node.Literal(v)
-          case '{ $v: Double }  => Node.Literal(v)
-          case '{ $v: String }  => Node.Literal(v)
-          case '{ $v: graceql.context.jdbc.Table[V, a] } =>
-            Node.Table[Expr, Type, a]('{ $v.name }, Type.of[a])
-      case '{ (c: Q) =>
-            c.unlift(
-              $block(c): DBIO[a]
+    e match          
+      case '{
+            ($c: Q).unlift(
+              $block: DBIO[a]
             )
           } =>
         block match
-          case '{ (c: Q) =>
-                c.typed($native(c): DBIO[a]): DBIO[b]
+          case '{
+                ($c: Q).typed($native: DBIO[a]): DBIO[b]
               } =>
             // ToDo: Add typing information
-            toNative[Q => a]('{ (c: Q) =>
-              c.unlift(${ Expr.betaReduce('{ $native(c) }) })
+            toNative[a]('{
+              $c.unlift($native)
             })
-          case '{ (c: Q) =>
-                c.native($sc: StringContext)(using $ns: NativeSupport[DBIO])(${
+          case '{
+                ($c: Q).native($sc: StringContext)(${
                   Varargs(args)
                 }: _*)
               } =>
-            val nativeArgs = args
-              .map { case '{ (c: Q) ?=> $b(c): t } =>
-                try
-                  toNative[Q => t](b)
-                catch
-                  //The following error cannot be caught inside a recursion for some reasone.
-                  //ToDo: Find out why...
-                  case _: MatchError =>         
-                    report.errorAndAbort(
-                      "Native code must only be used inside the call to `unlift`",
-                      b.asTerm.pos
-                    )  
-              }
+            val nativeArgs = args.map{
+              case '{$a: t} =>
+                TypeRepr.of[t].widen.asType match
+                  case '[x] => 
+                    toNative[x](a.asExprOf[x])
+            }
             parseNative(nativeArgs)(sc)
           case invalid =>
             report.errorAndAbort(
@@ -151,11 +132,25 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
                   """,
               block.asTerm.pos
             )
-      case '{ (c: Q) => $dbio(c): DBIO[a] } =>
+      case '{ $dbio: DBIO[a] } =>
         report.errorAndAbort(
           "Native code must only be used inside the call to `unlift`",
           e.asTerm.pos
         )
+      case '{ $a: x } =>
+        a match
+          case '{$v: Boolean } => Node.Literal(v)
+          case '{$v: Char }    => Node.Literal(v)
+          case '{$v: Byte }    => Node.Literal(v)
+          case '{$v: Short }   => Node.Literal(v)
+          case '{$v: Int }     => Node.Literal(v)
+          case '{$v: Long }    => Node.Literal(v)
+          case '{$v: Float }   => Node.Literal(v)
+          case '{$v: Double }  => Node.Literal(v)
+          case '{$v: String }  => Node.Literal(v)
+          case '{$v: graceql.context.jdbc.Table[V, a] } =>
+            Node.Table[Expr, Type, a]('{ $v.name }, Type.of[a])
+          case other => throw Exception(TypeRepr.of[x].widen.show(using Printer.TypeReprAnsiCode))            
 
   protected def parseNative(
       args: Seq[Node[Expr, Type]]
@@ -264,3 +259,6 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
   )(using ta: Type[A]): Expr[DBIO[A]] =
     import Node.*
     '{ DBIO.Query(${ print(tree) }, (rs) => ???) }
+
+object PolymorphicCompiler:
+  def placeholder[A]: A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")    

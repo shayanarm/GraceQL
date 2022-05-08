@@ -40,16 +40,13 @@ class Exe[R[_], N[_], C, A](val compiled: N[A]):
   inline def either(using C): Either[Throwable, A] =
     as[[x] =>> Either[Throwable, x]]  
 
-trait NativeSupport[N[+_]]
-
-trait Capabilities[+C[X[+_]] <: Capabilities[C, X], N[+_]]:
-  self: C[N] =>
-  extension[A](bin: N[A])(using NativeSupport[N])
+trait Capabilities[N[+_]]:
+  extension[A](bin: N[A])
     def typed[B]: N[B]
     def unlift: A    
   
-  extension(sc: StringContext)(using NativeSupport[N])
-    def native(s: (C[N] ?=> Any)*): N[Any]
+  extension(sc: StringContext)
+    def native(s: Any*): N[Any]
   
   extension[A](a: A)
     def lift: N[A]    
@@ -77,7 +74,7 @@ final type Read[R[_], M[_], T] = T match
   case Source[R, M, a] => M[Read[R, M, a]]
   case _               => T
 
-trait Queryable[R[_], M[_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] with Capabilities[[x[+_]] =>> Queryable[R,M,x],N]:
+trait Queryable[R[_], M[_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] with Capabilities[N]:
 
   extension [A](a: A)
     @terminal
@@ -103,13 +100,15 @@ trait Queryable[R[_], M[_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] w
     @terminal
     def update(predicate: A => Boolean)(f: A => A): Int
     @terminal
-    def delete(predicate: A => Boolean): Int
+    def dropWhile(predicate: A => Boolean): Int
     @terminal
-    inline def dropWhile(predicate: A => Boolean): Int = delete(predicate)
+    def clear(): Int
     @terminal
-    def clear(): Int = delete(_ => true)
+    inline def truncate(): Int = clear()
     @terminal
-    inline def truncate(): Int = clear()  
+    def create(): Unit  
+    @terminal
+    def delete(): Unit    
 
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>
@@ -132,21 +131,7 @@ trait QueryContext[R[_], M[+_]] extends Context[R]:
         A =:= M[RowType]
     ): LazyList[RowType] =
       lazyList
-  protected def exe[A](compiled: Native[A]): Exe[A] = Exe(compiled)      
-
-trait Definable[R[_], N[+_]] extends Capabilities[[x[+_]] =>> Definable[R,x], N]:
-  extension[A](ref: R[A])
-    def create(): Unit  
-    def drop(): Unit
-      
-trait SchemaContext[R[_]] extends Context[R]:
-  self =>
-
-  final type Definable = graceql.core.Definable[R, Native]
-  final type Capabilities = Definable
-  final type Exe[A] = graceql.core.Exe[R, Native, Connection, A]
-  protected def exe[A](compiled: Native[A]): Exe[A] =
-    graceql.core.Exe[R,Native,Connection,A](compiled)
+  protected def exe[A](compiled: Native[A]): Exe[A] = Exe(compiled)
 
 trait ACID[C]:
   def session(connection: C): C

@@ -18,5 +18,5 @@ import matchers._
 import java.util.concurrent.TimeUnit
 
 class MemorySpec extends AnyFlatSpec with should.Matchers {
-  
+
 }

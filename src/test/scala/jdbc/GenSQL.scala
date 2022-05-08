@@ -7,4 +7,4 @@ final type GenSQL
 object GenSQL:
   given anySQLContext[S[+X] <: Iterable[X]]: JDBCQueryContext[GenSQL, S] with
     inline def compile[A](inline query: Queryable ?=> A): Native[A] =
-      ${ ParseOnlyCompiler.compileDML[S, A]('query) }
+      ${ ParseOnlyCompiler.compile[S, A]('query) }

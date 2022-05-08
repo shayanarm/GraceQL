@@ -16,20 +16,12 @@ object DBIO:
   def query[A](query: String, parse: ResultSet => A): DBIO[A] = DBIO.Query(query, parse)
   def update(stmt: String): DBIO[Int] = DBIO.Update(stmt)
   def statement(stmt: String): DBIO[Unit] = DBIO.Statement(stmt)
-  given NativeSupport[DBIO] with {}  
 
 trait JDBCQueryContext[V, S[+X] <: Iterable[X]] extends QueryContext[[x] =>> Table[V, x], S]: 
 
   type Native[+A] = DBIO[A]
 
   type Connection = JConnection
-
-trait JDBCSchemaContext[V] extends SchemaContext[[x] =>> Table[V, x]]: 
-
-  type Native[+A] = DBIO[A]
-
-  type Connection = JConnection
-
 
 object Table:
 

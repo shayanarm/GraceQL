@@ -18,8 +18,10 @@ trait MemoryQueryContextImpl[R[_]]:
   protected def refToIterable[A,S[_]](ref: R[A])(using ifac: IterableFactory[S]): S[A]
   protected def refInsertMany[A](ref: R[A])(as: Iterable[A]): Iterable[A]
   protected def refUpdate[A](ref: R[A])(predicate: A => Boolean)(f: A => A): Int
-  protected def refDelete[A](ref: R[A])(predicate: A => Boolean): Int
+  protected def refDropWhile[A](ref: R[A])(predicate: A => Boolean): Int
   protected def refClear[A](ref: R[A]): Int
+
+  inline def notSupported[A](): A = throw GraceException("Unsupported operation. The call to this method should be prevented during compile time.")
 
   given memoryQueryable[S[+X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S, [x] =>> () => x] with { self =>
     private type Src[A] = Source[R, S, A]
@@ -31,17 +33,15 @@ trait MemoryQueryContextImpl[R[_]]:
       private inline def mapValues[B](f: S[A] => S[B]) =
         Source.Values(ma.withValues(f))
       private inline def withValues[B](f: S[A] => B): B = f(ma.merge)
-  
-    private def absurd(using NativeSupport[[x] =>> () => x]) = throw GraceException("`in-memory` contexts do not have `NativeSupport`")
 
-    extension[A](bin: () => A)(using NativeSupport[[x] =>> () => x])
-      def typed[B]: () => B = absurd
-      def unlift: A = absurd
+    extension[A](bin: () => A)
+      def typed[B]: () => B = notSupported()
+      inline def unlift: A = bin()
     extension[A](a: A)
-      def lift: () => A = () => a
+      inline def lift: () => A = () => a
 
-    extension(sc: StringContext)(using NativeSupport[[x] =>> () => x])
-      def native(s: (Queryable[R,S,[x] =>> () => x] ?=> Any)*): () => Any = absurd
+    extension(sc: StringContext)
+      def native(s: Any*): () => Any = notSupported()
 
     extension [A](ma: Src[A])
 
@@ -116,17 +116,20 @@ trait MemoryQueryContextImpl[R[_]]:
         insertMany(a.pure)(returning).head
       def update(predicate: A => Boolean)(f: A => A): Int = 
         refUpdate(ref)(predicate)(f)
-      def delete(predicate: A => Boolean): Int =
-        refDelete(ref)(predicate)
+      def dropWhile(predicate: A => Boolean): Int =
+        refDropWhile(ref)(predicate)
       override def clear(): Int = 
         refClear(ref) 
+
+      def create() : Unit = notSupported()
+      def delete() : Unit = notSupported()
   }
 
-  given memoryQueryContext[S[+X] <: Iterable[X], R[_]](using sl: Queryable[R, S, [x] =>> () => x]): QueryContext[R, S] with
+  given memoryQueryContext[R[_], S[+X] <: Iterable[X]](using sl: Queryable[R, S, [x] =>> () => x]): QueryContext[R, S] with
     type Native[A] = () => A
     type Connection = DummyImplicit
     inline def compile[A](inline query: Queryable ?=> A): () => A =
-      ${ Compiler.compile[A]('{query(using sl)}) }
+      ${ Compiler.compile[R, S, A]('{query(using sl)}) }
 
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
     def apply(compiled: () => A, conn: DummyImplicit): A = compiled()
@@ -158,7 +161,7 @@ class IterRef[A] private(private val underlying: ArrayBuffer[A]):
     nUpdated  
   }
 
-  protected [memory] inline def delete(pred: A => Boolean): Int = write {buffer => 
+  protected [memory] inline def dropWhile(pred: A => Boolean): Int = write {buffer => 
     val l = buffer.length
     buffer.dropWhileInPlace(pred)
     l - buffer.length
@@ -181,8 +184,8 @@ object IterRef extends MemoryQueryContextImpl[IterRef]:
   protected def refUpdate[A](ref: IterRef[A])(predicate: A => Boolean)(f: A => A): Int = 
     ref.update(predicate)(f)
   
-  protected def refDelete[A](ref: IterRef[A])(predicate: A => Boolean): Int = 
-    ref.delete(predicate)
+  protected def refDropWhile[A](ref: IterRef[A])(predicate: A => Boolean): Int = 
+    ref.dropWhile(predicate)
 
   protected def refClear[A](ref: IterRef[A]): Int = 
     ref.clear()  
@@ -193,5 +196,5 @@ object Eval extends MemoryQueryContextImpl[Eval]:
   protected def refToIterable[A,S[_]](ref: Eval[A])(using ifac: IterableFactory[S]): S[A] = absurd(ref)
   protected def refInsertMany[A](ref: Eval[A])(as: Iterable[A]): Iterable[A] = absurd(ref)
   protected def refUpdate[A](ref: Eval[A])(predicate: A => Boolean)(f: A => A): Int = absurd(ref)
-  protected def refDelete[A](ref: Eval[A])(predicate: A => Boolean): Int = absurd(ref)
+  protected def refDropWhile[A](ref: Eval[A])(predicate: A => Boolean): Int = absurd(ref)
   protected def refClear[A](ref: Eval[A]): Int = absurd(ref)
