@@ -30,7 +30,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   Using raw SQL, the JDBC context
   """ should "parse a select query from a single table" in {
     parseAssert {
-      native"SELECT * FROM ${users} AS u".unlift
+      native"SELECT * FROM ${users.lift} AS u".unlift
     } {
       "SELECT * FROM users AS u"
     }
@@ -42,7 +42,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
             SELECT
             *
             FROM
-            $users
+            ${users.lift}
             AS
             u""".unlift
     } {
@@ -52,7 +52,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse a \"SELECT DISTINCT\" query" in {
     parseAssert {
-      native"SELECT DISTINCT * FROM $users AS u".unlift
+      native"SELECT DISTINCT * FROM ${users.lift} AS u".unlift
     } {
       "SELECT DISTINCT * FROM users AS u"
     }
@@ -60,7 +60,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse any keyword without case sensitivity" in {
     parseAssert {
-      native"SeLeCt * fROm $users As u".unlift
+      native"SeLeCt * fROm ${users.lift} As u".unlift
     } {
       "SELECT * FROM users AS u"
     }
@@ -68,7 +68,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse literal columns inside the select clause" in {
     parseAssert {
-      native"SELECT ${1}, ${"foo"} FROM $users AS u".unlift
+      native"SELECT ${1.lift}, ${"foo".lift} FROM ${users.lift} AS u".unlift
     } {
       "SELECT 1, \"foo\" FROM users AS u"
     }
@@ -76,7 +76,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse named columns inside the select clause" in {
     parseAssert {
-      native"SELECT ${1} a1, ${"foo"} AS a2 FROM $users AS u".unlift
+      native"SELECT ${1.lift} a1, ${"foo".lift} AS a2 FROM ${users.lift} AS u".unlift
     } {
       "SELECT 1 AS a1, \"foo\" AS a2 FROM users AS u"
     }
@@ -84,7 +84,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse multiple statements" in {
     parseAssert {
-      native"SELECT * FROM $users; SELECT * FROM $users".unlift
+      native"SELECT * FROM ${users.lift}; SELECT * FROM ${users.lift}".unlift
     } {
       "SELECT * FROM users; SELECT * FROM users;"
     }
@@ -92,7 +92,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse a literal integer as valid SQL expression" in {
     parseAssert {
-      native"${1}".unlift
+      native"${1.lift}".unlift
     } {
       "1"
     }
@@ -100,7 +100,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse a simple arithmetic expression" in {
     parseAssert {
-      native"${2} + ${2}".unlift
+      native"${2.lift} + ${2.lift}".unlift
     } {
       "2 + 2"
     }
@@ -114,15 +114,15 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  // it should "parse nested native queries" in {
-  //   parseAssert {
-  //     val bit = native"SELECT * FROM DUAL".unlift
-  //     native"SELECT * FROM ${native"SELECT * FROM ${bit}".unlift}".unlift
-  //   } {
-  //     "SELECT * FROM SELECT * FROM SELECT * FROM DUAL"
-  //   }
-  // }
-
+  it should "parse nested native queries" in {
+    parseAssert {
+      val bit = native"SELECT * FROM DUAL"
+      native"SELECT * FROM ${native"SELECT * FROM ${bit}"}".unlift
+    } {
+      "SELECT * FROM SELECT * FROM SELECT * FROM DUAL"
+    }
+  }
+  
   it should "only allow parsing native query followed by unlift" in {
     parseAssert {
       native"select * from dual".typed[Int].unlift

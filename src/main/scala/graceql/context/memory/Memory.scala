@@ -41,7 +41,7 @@ trait MemoryQueryContextImpl[R[_]]:
       inline def lift: () => A = () => a
 
     extension(sc: StringContext)
-      def native(s: Any*): () => Any = notSupported()
+      def native(s: (() => Any)*): () => Any = notSupported()
 
     extension [A](ma: Src[A])
 

@@ -55,8 +55,10 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
 
   given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
 
-  import q.reflect.{Tree => _, Select => _, Block => _, Literal => _, *}
+  import q.reflect.{Tree => _, Select => _, Block => _, Literal => SLiteral, *}
   import CompileOps.*
+  import PolymorphicCompiler.*
+
   protected def preprocess[A](
       e: Expr[A]
   )(using ta: Type[A]): Expr[A] =
@@ -79,7 +81,6 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
         toDBIO[A]
     pipe(expr)
   private def appliedToNull[A](expr: Expr[Q => A])(using Type[A]): Expr[A] =
-    import q.reflect.*
     expr match
       case '{(c: Q) => $b: A} => b
       case '{(c: Q) => $b(c): A} =>
@@ -87,7 +88,7 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
               override def transformTerm(term: Term)(owner: Symbol): Term = 
                 super.transformTerm(term)(owner) match
                   case id: Ident if id.tpe <:< TypeRepr.of[Q] => 
-                    '{PolymorphicCompiler.placeholder[Q]}.asExprOf[Q].asTerm
+                    '{placeholder[Q]}.asExprOf[Q].asTerm
                   case t => t
             }.transformTerm(expr.asTerm)(Symbol.spliceOwner)
             applied.asExprOf[Q => A] match
@@ -103,41 +104,33 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
             ($c: Q).unlift(
               $block: DBIO[a]
             )
-          } =>
-        block match
-          case '{
-                ($c: Q).typed($native: DBIO[a]): DBIO[b]
-              } =>
-            // ToDo: Add typing information
-            toNative[a]('{
-              $c.unlift($native)
-            })
+          } => toNative[DBIO[a]](block)            
+      case '{ $dbio: DBIO[a] } =>
+        dbio match
+          case '{($c: Q).lift($a: t)} => toNative[t](a)
           case '{
                 ($c: Q).native($sc: StringContext)(${
                   Varargs(args)
                 }: _*)
               } =>
             val nativeArgs = args.map{
-              case '{$a: t} =>
+              //Unnecessary step, but for good measure
+              case '{$a: DBIO[t]} =>
                 TypeRepr.of[t].widen.asType match
                   case '[x] => 
-                    toNative[x](a.asExprOf[x])
+                    toNative[DBIO[x]](a.asExprOf[DBIO[x]])
             }
             parseNative(nativeArgs)(sc)
-          case invalid =>
-            report.errorAndAbort(
-              s"""
-                  Only native code must be used inside the call to `unlift`
-                  ${invalid.asTerm.show(using Printer.TreeAnsiCode)}
-                  """,
-              block.asTerm.pos
-            )
-      case '{ $dbio: DBIO[a] } =>
-        report.errorAndAbort(
-          "Native code must only be used inside the call to `unlift`",
-          e.asTerm.pos
-        )
-      case '{ $a: x } =>
+          case '{
+                ($c: Q).typed($native: DBIO[a]): DBIO[b]
+              } =>
+            // ToDo: Add typing information
+            toNative[DBIO[a]](native)            
+          case _ => report.errorAndAbort(
+              "Native code must only be provided using the `lift` method or the `native` interpolator",
+              e.asTerm.pos
+            )                        
+      case '{ $a: x } if literalEncodable(a) =>
         a match
           case '{$v: Boolean } => Node.Literal(v)
           case '{$v: Char }    => Node.Literal(v)
@@ -151,6 +144,9 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
           case '{$v: graceql.context.jdbc.Table[V, a] } =>
             Node.Table[Expr, Type, a]('{ $v.name }, Type.of[a])
           case other => throw Exception(TypeRepr.of[x].widen.show(using Printer.TypeReprAnsiCode))            
+
+  protected def literalEncodable[A](expr: Expr[A]): Boolean = 
+    true
 
   protected def parseNative(
       args: Seq[Node[Expr, Type]]
@@ -261,4 +257,13 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
     '{ DBIO.Query(${ print(tree) }, (rs) => ???) }
 
 object PolymorphicCompiler:
-  def placeholder[A]: A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")    
+  def placeholder[A]: A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")
+  def placeholder[A](ident: Int): A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")
+
+  class Context(using q: Quotes)(private val refMap: scala.collection.mutable.Map[q.reflect.Ident, Int]):
+    private var pointer: Int = 0
+    // def nextIdent(): String = 
+    //   val id = pointer
+    //   pointer += 1
+    //   id
+ 

@@ -46,7 +46,7 @@ trait Capabilities[N[+_]]:
     def unlift: A    
   
   extension(sc: StringContext)
-    def native(s: Any*): N[Any]
+    def native(s: N[Any]*): N[Any]
   
   extension[A](a: A)
     def lift: N[A]    
