@@ -1,11 +1,10 @@
-package graceql.context.jdbc
+package graceql.context.jdbc.compiler
 
 import scala.quoted.*
 import graceql.core.*
 import graceql.context.jdbc.*
 import graceql.util.CompileOps
 import scala.annotation.targetName
-import scala.collection.immutable.ArraySeq
 
 trait VendorTreeCompiler[V]:
   val encoders: Encoders
@@ -46,8 +45,37 @@ trait Encoders:
   def alias(l: Expr[String])(using Quotes): Expr[String]
   def tableName(l: Expr[String])(using Quotes): Expr[String]
 
+class Context(
+    val refMap: Map[Any, String] =
+      Map.empty[Any, String]
+):
+  def withRegisteredIdent(using q: Quotes)(ident: q.reflect.Tree, name: String): Context =
+    Context(refMap + (ident -> name))
+
+  def literalEncodable[A](using q: Quotes)(expr: Expr[A]): Boolean =
+    import q.reflect.*
+    var encountered = false
+    new q.reflect.TreeTraverser {
+      override def traverseTree(tree: q.reflect.Tree)(owner: Symbol): Unit =
+        if isRegisteredIdent(tree)
+        then encountered = true
+        else super.traverseTree(tree)(owner)
+    }.traverseTree(expr.asTerm)(Symbol.spliceOwner)
+    !encountered
+
+  def isRegisteredIdent(using q: Quotes)(tree: q.reflect.Tree) =
+    refMap.contains(tree)  
+
+abstract class CompileModule:
+  def apply[V, S[+X] <: Iterable[X]](
+      recurse: Context => Expr[Any] => Node[Expr,Type],
+      nameGen: () => String
+  )(ctx: Context)(using
+      q: Quotes, tv: Type[V], ts: Type[S]
+  ): PartialFunction[Expr[Any], Node[Expr, Type]]
+
 class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
-    q: Quotes,
+    val q: Quotes,
     tv: Type[V],
     ts: Type[S]
 ):
@@ -58,6 +86,20 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
   import q.reflect.{Tree => _, Select => _, Block => _, Literal => SLiteral, *}
   import CompileOps.*
   import PolymorphicCompiler.*
+    
+  private class NameGenerator(private val prefix: String):
+    private var counter = 1
+    def nextName(): String =
+      synchronized {
+        val id = counter
+        counter += 1
+        s"$prefix$id"
+      }
+  private val nameGen = NameGenerator("x")
+
+  val partials: Seq[CompileModule] = Seq(
+    modules.NativeSyntaxSupport
+  )
 
   protected def preprocess[A](
       e: Expr[A]
@@ -72,92 +114,23 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
   def compile[A](expr: Expr[Q => A])(using
       ta: Type[A]
   ): Expr[DBIO[A]] =
+
+    val fallback: PartialFunction[Expr[Any], Node[Expr, Type]] = {
+        case e => report.errorAndAbort("Unsupported operation!", e.asTerm.pos)
+      }  
+    def toNative(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] = 
+      partials.foldRight(fallback){(i, c) => 
+        i[V,S](toNative, nameGen.nextName)(ctx).orElse(c)
+      }
+
     val pipe =
-      preprocess[Q => A] andThen
-        appliedToNull[A] andThen      
-        toNative andThen
+      appliedToPlaceHolder[Q, A] andThen
+        preprocess[A] andThen
+        toNative(Context()) andThen
         encodedTree andThen
         adaptSupport andThen
         toDBIO[A]
     pipe(expr)
-  private def appliedToNull[A](expr: Expr[Q => A])(using Type[A]): Expr[A] =
-    expr match
-      case '{(c: Q) => $b: A} => b
-      case '{(c: Q) => $b(c): A} =>
-            val applied = new TreeMap {
-              override def transformTerm(term: Term)(owner: Symbol): Term = 
-                super.transformTerm(term)(owner) match
-                  case id: Ident if id.tpe <:< TypeRepr.of[Q] => 
-                    '{placeholder[Q]}.asExprOf[Q].asTerm
-                  case t => t
-            }.transformTerm(expr.asTerm)(Symbol.spliceOwner)
-            applied.asExprOf[Q => A] match
-              case '{(c: Q) => $b: A} => b
-
-  protected def toNative[A](
-      e: Expr[A]
-  )(using ta: Type[A]): Node[Expr, Type] =
-    import q.reflect.{Tree => _, *}
-
-    e match          
-      case '{
-            ($c: Q).unlift(
-              $block: DBIO[a]
-            )
-          } => toNative[DBIO[a]](block)            
-      case '{ $dbio: DBIO[a] } =>
-        dbio match
-          case '{($c: Q).lift($a: t)} => toNative[t](a)
-          case '{
-                ($c: Q).native($sc: StringContext)(${
-                  Varargs(args)
-                }: _*)
-              } =>
-            val nativeArgs = args.map{
-              //Unnecessary step, but for good measure
-              case '{$a: DBIO[t]} =>
-                TypeRepr.of[t].widen.asType match
-                  case '[x] => 
-                    toNative[DBIO[x]](a.asExprOf[DBIO[x]])
-            }
-            parseNative(nativeArgs)(sc)
-          case '{
-                ($c: Q).typed($native: DBIO[a]): DBIO[b]
-              } =>
-            // ToDo: Add typing information
-            toNative[DBIO[a]](native)            
-          case _ => report.errorAndAbort(
-              "Native code must only be provided using the `lift` method or the `native` interpolator",
-              e.asTerm.pos
-            )                        
-      case '{ $a: x } if literalEncodable(a) =>
-        a match
-          case '{$v: Boolean } => Node.Literal(v)
-          case '{$v: Char }    => Node.Literal(v)
-          case '{$v: Byte }    => Node.Literal(v)
-          case '{$v: Short }   => Node.Literal(v)
-          case '{$v: Int }     => Node.Literal(v)
-          case '{$v: Long }    => Node.Literal(v)
-          case '{$v: Float }   => Node.Literal(v)
-          case '{$v: Double }  => Node.Literal(v)
-          case '{$v: String }  => Node.Literal(v)
-          case '{$v: graceql.context.jdbc.Table[V, a] } =>
-            Node.Table[Expr, Type, a]('{ $v.name }, Type.of[a])
-          case other => throw Exception(TypeRepr.of[x].widen.show(using Printer.TypeReprAnsiCode))            
-
-  protected def literalEncodable[A](expr: Expr[A]): Boolean = 
-    true
-
-  protected def parseNative(
-      args: Seq[Node[Expr, Type]]
-  )(sce: Expr[StringContext]): Node[Expr, Type] =
-    import q.reflect.*
-    val sc = sce match
-      case '{ StringContext(${ Varargs(Exprs(parts)) }: _*) } =>
-        StringContext(parts*)
-      case '{ new StringContext(${ Varargs(Exprs(parts)) }: _*) } =>
-        StringContext(parts*)
-    Node.parse(sc)(args).get
 
   protected def encodedTree(node: Node[Expr, Type]): Expr[Tree] =
 
@@ -256,14 +229,4 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
     import Node.*
     '{ DBIO.Query(${ print(tree) }, (rs) => ???) }
 
-object PolymorphicCompiler:
-  def placeholder[A]: A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")
-  def placeholder[A](ident: Int): A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")
-
-  class Context(using q: Quotes)(private val refMap: scala.collection.mutable.Map[q.reflect.Ident, Int]):
-    private var pointer: Int = 0
-    // def nextIdent(): String = 
-    //   val id = pointer
-    //   pointer += 1
-    //   id
- 
+object PolymorphicCompiler

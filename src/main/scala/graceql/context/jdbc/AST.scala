@@ -76,6 +76,8 @@ object Node:
     val placeholders = args.indices.map(i => s":$i")
     val raw = sc.raw(placeholders*)
     SQLParser(args.toArray).apply(raw)
+  extension(sc: StringContext)
+    def gensql[L[_], T[_]](args: Node[L, T]*): Node[L,T] = parse(sc)(args).get
 
 class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   private type N = Node[L, T]
@@ -179,8 +181,10 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   def createQuery: Parser[N] = ???
   def dropQuery: Parser[N] = ???
 
+  def anything: Parser[String] = ".+".r ^^ identity
+
   def apply(src: String): Try[N] =
-    parse(sql, src) match
+    parse(sql <~ not(anything), src) match
       case Success(tree, _) => scala.util.Success(tree)
       case Error(msg, i)    => scala.util.Failure(GraceException(msg))
       case Failure(msg, i)  => scala.util.Failure(GraceException(msg))

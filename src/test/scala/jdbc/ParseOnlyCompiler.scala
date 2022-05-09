@@ -1,6 +1,6 @@
 package jdbc
 
-import graceql.context.jdbc.VendorTreeCompiler
+import graceql.context.jdbc.compiler.*
 
 import scala.quoted.*
 import graceql.core.*

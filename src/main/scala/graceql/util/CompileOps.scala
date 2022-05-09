@@ -1,8 +1,11 @@
 package graceql.util
 
 import scala.quoted.*
+import graceql.core.GraceException
 
 object CompileOps {
+
+  def placeholder[A]: A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")
 
   def betaReduceAll(using q: Quotes)(e: q.reflect.Term): q.reflect.Term =
     import q.reflect.*
@@ -48,16 +51,27 @@ object CompileOps {
           case other => other
     mapper.transformTerm(term)(Symbol.spliceOwner)
 
+  def appliedToPlaceHolder[A, B](expr: Expr[A => B])(using q: Quotes, ta: Type[A], tb: Type[B]): Expr[B] =
+    import q.reflect.*
+    val p = '{placeholder[A]}
+    Expr.betaReduce('{$expr($p)})  
+
+  def appliedToPlaceHolder[A, B, C](expr: Expr[(A, B) => C])(using q: Quotes, ta: Type[A], tb: Type[B], tc: Type[C]): Expr[C] =
+    import q.reflect.*
+    val pa = '{placeholder[A]}
+    val pb = '{placeholder[B]}
+    Expr.betaReduce('{$expr($pa, $pb)})  
+
   def logged[A](using q: Quotes, ev: A <:< q.reflect.Tree)(
       op: A => A
   ): A => A = tree =>
     import q.reflect.*
     println(
-      s"before:\n${tree.asInstanceOf[Tree].show(using Printer.TreeStructure)}\n${tree.asInstanceOf[Tree].show(using Printer.TreeAnsiCode)}\n"
+      s"before:\n${ev(tree).show(using Printer.TreeStructure)}\n${ev(tree).show(using Printer.TreeAnsiCode)}\n"
     )
     val trans = op(tree)
     println(
-      s"after:\n${trans.asInstanceOf[Tree].show(using Printer.TreeStructure)}\n${trans.asInstanceOf[Tree].show(using Printer.TreeAnsiCode)}\n"
+      s"after:\n${ev(trans).show(using Printer.TreeStructure)}\n${ev(trans).show(using Printer.TreeAnsiCode)}\n"
     )
     trans
 }
