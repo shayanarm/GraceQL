@@ -19,4 +19,38 @@ import java.util.concurrent.TimeUnit
 
 class MemorySpec extends AnyFlatSpec with should.Matchers {
 
+    val ref = IterRef(1,2,3)
+
+    """
+    The IterRef context
+    """ should "not allow ref.create()" in {    
+            """
+            query[IterRef,Seq] {
+                ref.create()
+            }.run    
+            """ shouldNot compile
+        }
+
+    it should "not allow ref.delete()" in {    
+            """
+            query[IterRef,Seq] {
+                ref.delete()
+            }.run    
+            """ shouldNot compile
+        }
+
+    it should "not allow native syntax" in {    
+            """
+            query[IterRef,Seq] {
+                native"foo"
+            }.run    
+            """ shouldNot compile
+        }
+    it should "not allow typing on native syntax" in {    
+            """
+            query[IterRef,Seq] {
+                (() => "sdf").typed[Int]
+            }.run    
+            """ shouldNot compile
+        }             
 }

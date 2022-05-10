@@ -100,91 +100,104 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     def star = registry("star")
     def semicolon = registry("semicolon")
 
-  def placeholder: Parser[N] = (""":""".r ~> """\d+""".r) ^^ { i =>
-    args(i.toInt)
-  }
-  def embeddable[A](
-      f: PartialFunction[Node[L, T], A],
-      msg: Node[L, T] => String = n =>
-        s"Embedded Tree is not acceptable in this position:\n${n}"
-  ) =
-    placeholder ^? (f, msg)
+  object parsers:
+    def selectQuery: Parser[N] = (kw.select ~> kw.distinct.?) ~ selectColumns ~ (kw.from ~> src) ~ selectClauses ^^ {
+          case distinct ~ colset ~ from ~ (joins, where, groupBy, orderBy, offset,
+              limit) =>
+            Select(
+              distinct.isDefined,
+              colset,
+              from,
+              joins,
+              where,
+              groupBy,
+              orderBy,
+              offset,
+              limit
+            )
+        }
+    def parens(required: Boolean)(without: Parser[N]): Parser[N] = 
+      val `with` = "(" ~> parens(false)(without) <~ ")"
+      if required then `with` else `with` | without
+    def dual: Parser[N] = kw.dual ^^ { _ => Dual() }
+    def ident: Parser[String] = """[a-zA-Z][a-zA-Z0-9_]*""".r ^? ({
+      case p if !kw.registry.values.exists(r => r.matches(p)) => p
+    }, t => s"Keyword \"${t}\" cannot be used as identifier")
+    def ref: Parser[N] = ident ^^ { r => Ref(r) }        
+    def updateQuery: Parser[N] = ???
+    def deleteQuery: Parser[N] = ???
+    def insertQuery: Parser[N] = ???
+    def createQuery: Parser[N] = ???
+    def dropQuery: Parser[N] = ???
+    def block: Parser[N] = rep1sep(query, kw.semicolon) ^^ {
+      case Nil      => Block(Nil)
+      case h +: Nil => h
+      case l        => Block(l)
+    }
+    def tuple(of: Parser[N]): Parser[N] =
+      rep1sep(of, ",".r) ^^ { r => Tuple(r) }
+  
+    def star: Parser[N] = kw.star ^^ { _ => Star() }
+
+    def aliased(required: Boolean)(
+        of: Parser[N]
+    ): Parser[N] =
+      val alias = kw.as.? ~> parsers.ident
+      required match
+        case false =>
+          of ~ alias.? ^^ {
+            case o ~ Some(i) => As(o, i)
+            case o ~ _       => o
+          }
+        case true => of ~ alias ^^ { case o ~ i => As(o, i) }    
+    def anything: Parser[String] = ".+".r ^^ identity    
+
+  object embeddables:
+    def placeholder: Parser[N] = (""":""".r ~> """\d+""".r) ^^ { i =>
+      args(i.toInt)
+    }
+
+    def apply[A](
+      f: PartialFunction[N, A],
+      nodeName: String
+    ) = placeholder ^? (f, t => s"Expected \"${nodeName}\" reference, but found $t")
+
+    def table: Parser[N] = apply(
+      { case t: Table[_, _, _] => t },
+      "Table"
+    )
+
+    def literal: Parser[N] = apply(
+      { case t: Literal[_, _, _] => t},
+      "Literal"
+    )
+
+    def selectQuery: Parser[N] = apply(
+       { case t: Select[_, _] => t },
+      "SELECT"
+    )
+
+    def tuple: Parser[N] = apply(
+       { case t: Tuple[_, _] => t },
+      "Tuple"
+    )
+
   def sql: Parser[N] = block | query | expr
-  def block: Parser[N] = rep1sep(query, kw.semicolon) ^^ {
-    case Nil      => Block(Nil)
-    case h +: Nil => h
-    case l        => Block(l)
-  }
+  def block = parsers.block
   def query: Parser[N] =
     selectQuery // | updateQuery | deleteQuery | insertQuery | createQuery | dropQuery
   def selectQuery: Parser[N] =
-    embeddable { case t: Select[_, _] =>
-      t
-    } |
-      ((kw.select ~> kw.distinct.?) ~ selectColumns ~ (kw.from ~> src) ~ selectClauses ^^ {
-        case distinct ~ colset ~ from ~ (joins, where, groupBy, orderBy, offset,
-            limit) =>
-          Select(
-            distinct.isDefined,
-            colset,
-            from,
-            joins,
-            where,
-            groupBy,
-            orderBy,
-            offset,
-            limit
-          )
-      })
-  def selectColumns: Parser[N] = tuple(aliased(expr)) | star
+    embeddables.selectQuery | parsers.selectQuery
+  def selectColumns: Parser[N] = parsers.tuple(parsers.aliased(false)(expr)) | embeddables.tuple | parsers.star
   def selectClauses
       : Parser[(List[N], Option[N], Option[N], List[N], Option[N], Option[N])] =
     success((Nil, None, None, Nil, None, None))
-  def tuple(of: Parser[N]): Parser[N] =
-    rep1sep(of, ",".r) ^^ { r => Tuple(r) }
-  def aliased(
-      of: Parser[N],
-      required: Boolean = false
-  ): Parser[N] =
-    val alias = kw.as.? ~> ident
-    required match
-      case false =>
-        of ~ alias.? ^^ {
-          case o ~ Some(i) => As(o, i)
-          case o ~ _       => o
-        }
-      case true => of ~ alias ^^ { case o ~ i => As(o, i) }
-  def star: Parser[N] = kw.star ^^ { _ => Star() }
-  def expr: Parser[N] = literal | selectQuery
-  def src: Parser[N] = aliased(table | selectQuery) | dual
-  def dual: Parser[N] = kw.dual ^^ { _ => Dual() }
-  def ident: Parser[String] = """[a-zA-Z][a-zA-Z0-9_]*""".r ^? ({
-    case p if !kw.registry.values.exists(r => r.matches(p)) => p
-  }, t => s"Keyword \"${t}\" cannot be used as identifier")
-  def ref: Parser[N] = ident ^^ { r => Ref(r) }
-
-  def table: Parser[N] = embeddable(
-    { case t: Table[_, _, _] =>
-      t
-    },
-    t => s"Expected a \"Table\" reference, but found $t"
-  )
-  def literal: Parser[N] = embeddable(
-    { case t: Literal[_, _, _] =>
-      t
-    },
-    t => s"Expected a \"Literal\" reference, but found $t"
-  )
-  def updateQuery: Parser[N] = ???
-  def deleteQuery: Parser[N] = ???
-  def insertQuery: Parser[N] = ???
-  def createQuery: Parser[N] = ???
-  def dropQuery: Parser[N] = ???
-
-  def anything: Parser[String] = ".+".r ^^ identity
+  def subquery: Parser[N] = parsers.parens(false)(embeddables.selectQuery) | parsers.parens(true)(parsers.selectQuery)
+  def expr: Parser[N] = parsers.parens(false)(embeddables.literal | subquery)
+  def src: Parser[N] = parsers.aliased(false)(embeddables.table | subquery) | parsers.dual
 
   def apply(src: String): Try[N] =
-    parse(sql <~ not(anything), src) match
+    parse(sql <~ not(parsers.anything), src) match
       case Success(tree, _) => scala.util.Success(tree)
       case Error(msg, i)    => scala.util.Failure(GraceException(msg))
       case Failure(msg, i)  => scala.util.Failure(GraceException(msg))

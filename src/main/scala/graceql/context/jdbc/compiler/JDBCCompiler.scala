@@ -49,22 +49,32 @@ class Context(
     val refMap: Map[Any, String] =
       Map.empty[Any, String]
 ):
-  def withRegisteredIdent(using q: Quotes)(ident: q.reflect.Tree, name: String): Context =
-    Context(refMap + (ident -> name))
+  import CompileOps.placeholder
+  def withRegisteredIdent[A](using q: Quotes, ta: Type[A])(name: String): (Context, Expr[A]) =
+    import q.reflect.*
+    val ident = newPlaceholder[A]
+    (Context(refMap + (ident.asTerm -> name)), ident)
 
-  def literalEncodable[A](using q: Quotes)(expr: Expr[A]): Boolean =
+  def literalEncodable(using q: Quotes)(expr: Expr[Any]): Boolean =
     import q.reflect.*
     var encountered = false
+    val symbol = Symbol.requiredMethod("graceql.util.CompileOps.placeholder")
     new q.reflect.TreeTraverser {
       override def traverseTree(tree: q.reflect.Tree)(owner: Symbol): Unit =
-        if isRegisteredIdent(tree)
-        then encountered = true
-        else super.traverseTree(tree)(owner)
+        tree match
+          case i if i.symbol == symbol => encountered = true
+          case _ => super.traverseTree(tree)(owner)
     }.traverseTree(expr.asTerm)(Symbol.spliceOwner)
     !encountered
 
+  def newPlaceholder[A](using Quotes, Type[A]): Expr[A] = '{placeholder[A]}  
+
   def isRegisteredIdent(using q: Quotes)(tree: q.reflect.Tree) =
     refMap.contains(tree)  
+
+  def refName(using q: Quotes)(tree: q.reflect.Tree): String =
+    refMap(tree)
+
 
 abstract class CompileModule:
   def apply[V, S[+X] <: Iterable[X]](
@@ -203,7 +213,12 @@ class PolymorphicCompiler[V, S[+X] <: Iterable[X]](val encoders: Encoders)(using
             builder.append("SELECT ")
             if distinct then builder.append("DISTINCT ")
             builder.append(rec(columns) + " ")
-            builder.append(s"FROM ${rec(from)}")
+            val clause = from match
+              case sub@ As(s: Select[_,_], name) =>
+                s"(${rec(s)}) AS ${name}"
+              case sub: Select[_,_] => s"(${rec(from)})"
+              case i => rec(from)
+            builder.append(s"FROM ${clause}")
             // s"""
             // SELECT ${if distinct then "DISTINCT " else ""}${rec(columns)}
             // FROM ${rec(from)}

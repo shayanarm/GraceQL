@@ -23,8 +23,8 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   inline def parseAssert[A](
       inline src: Queryable[[x] =>> Table[GenSQL, x], Iterable, DBIO] ?=> A
   )(expected: String) =
-    val dbio = query[[x] =>> Table[GenSQL, x], Iterable] { q ?=> src(using q) }
-    assert(dbio.compiled.underlying == expected)
+    val exe = query[[x] =>> Table[GenSQL, x], Iterable](src)
+    assert(exe.compiled.underlying == expected)
 
   s"""
   Using raw SQL, the JDBC context
@@ -106,31 +106,32 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  it should "parse nested native queries" in {
+  it should "parse parentheses around expressions and nested queries" in {
     parseAssert {
-      val bit = native"SELECT * FROM DUAL"
-      native"SELECT * FROM ${native"SELECT * FROM ${bit}"}".unlift
+      native"SELECT (${1.lift}) FROM (SELECT * FROM DUAL) AS u".unlift
     } {
-      "SELECT * FROM SELECT * FROM SELECT * FROM DUAL"
+      "SELECT 1 FROM (SELECT * FROM DUAL) AS u"
     }
   }
-  
-  it should "only allow parsing native query followed by unlift" in {
+
+  it should "parse a query without requiring parenthesis for the embedded subquery" in {
     parseAssert {
-      native"select * from dual".typed[Int].unlift
+      val sub = native"SELECT * FROM DUAL"
+      native"SELECT * FROM (SELECT * FROM ${sub})".unlift
     } {
-      "SELECT * FROM DUAL"
+      "SELECT * FROM (SELECT * FROM (SELECT * FROM DUAL))"
     }
   }
 
   it should "have no leftovers after parsing" in {
-    parseAssert {
-      native"select * from ${users.lift} as u".unlift
-      //uncomment to see this fail
-      // native"select * from ${users.lift} as u leftover".unlift
-    } {
-      "SELECT * FROM users AS u"
-    }
+    """
+      val users2: Table[GenSQL, User] = Table[GenSQL, User]("users")
+      parseAssert {
+        native"select * from ${users2.lift} as u leftover".unlift
+      } {
+        "SELECT * FROM users AS u"
+      }
+    """ shouldNot compile
   }
 
   // it should "parse a simple arithmetic expression" in {
