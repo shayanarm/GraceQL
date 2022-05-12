@@ -8,25 +8,61 @@ import graceql.context.jdbc.*
 import scala.annotation.targetName
 
 object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
-  val encoders: Encoders = new Encoders:
-    @targetName("booleanLit")
-    def lit(l: Expr[Boolean])(using Quotes): Expr[String] = '{ $l.toString }
-    @targetName("charLit")
-    def lit(l: Expr[Char])(using Quotes): Expr[String] = '{ $l.toString }
-    @targetName("byteLit")
-    def lit(l: Expr[Byte])(using Quotes): Expr[String] = '{ $l.toString }
-    @targetName("shortLit")
-    def lit(l: Expr[Short])(using Quotes): Expr[String] = '{ $l.toString }
-    @targetName("intLit")
-    def lit(l: Expr[Int])(using Quotes): Expr[String] = '{ $l.toString }
-    @targetName("longLit")
-    def lit(l: Expr[Long])(using Quotes): Expr[String] = '{ $l.toString }
-    @targetName("floatLit")
-    def lit(l: Expr[Float])(using Quotes): Expr[String] = '{ $l.toString }
-    @targetName("doubleLit")
-    def lit(l: Expr[Double])(using Quotes): Expr[String] = '{ $l.toString }
-    @targetName("stringLit")
-    def lit(l: Expr[String])(using Quotes): Expr[String] = '{s"\"${$l.replace("\"","")}\""}
-    def alias(l: Expr[String])(using Quotes): Expr[String] = l
-    def tableName(l: Expr[String])(using Quotes): Expr[String] = l
+    
+  protected def print(tree: Node[Expr, Type])(using Quotes): Expr[String] =
+    import Node.*
+    tree match
+      case Select(
+            distinct,
+            columns,
+            from,
+            joins,
+            where,
+            groupBy,
+            orderBy,
+            offset,
+            limit
+          ) =>
+        val (fromClause, alias, parens) =
+          from match
+            case sub @ As(s: Select[_, _], name) =>
+              (print(s), '{ Some(${ Expr(name) }) }, '{ true })
+            case sub: Select[_, _] => (print(from), '{ None }, '{ true })
+            case i                 => (print(from), '{ None }, '{ false })
+        '{
+          val builder = StringBuilder()
+          builder.append("SELECT ")
+          if ${ Expr(distinct) } then builder.append("DISTINCT ")
+          builder.append(${ print(columns) } + " ")
+          val fr = if $parens then s"(${$fromClause})" else $fromClause
+          builder.append(s"FROM ${fr}")
+          if ${ alias }.isDefined then builder.append(s" AS ${$alias.get}")
+          // s"""
+          // SELECT ${if distinct then "DISTINCT " else ""}${print(columns)}
+          // FROM ${print(from)}
+          // ${joins.map(print).mkString("\n")}
+          // ${where.fold("")(i => s"WHERE ${print(i)}")}
+          // ${groupBy.fold("")(i => s"GROUP BY ${print(i)}")}
+          // """
+          builder.toString
+        }
+      case Block(stmts) =>
+        '{ ${ Expr.ofSeq(stmts.map(print)) }.map(q => s"$q;").mkString(" ") }
+      case Star()       => '{ "*" }
+      case Tuple(trees) => '{ ${ Expr.ofSeq(trees.map(print)) }.mkString(", ") }
+      case As(tree, name) => '{ s"${${ print(tree) }} AS ${${ Expr(name) }}" }
+      case Table(name, _) => name
+      case Literal(value) => 
+        value.asExprOf[scala.Any] match
+          case '{$i: String} => '{"\"" + $i + "\""}
+          case v => '{$v.toString} 
+      case Dual()         => '{ "DUAL" }
+      case FunApp(Func.BuiltIn(Symbol.Plus), List(l,r), _) => 
+        '{ ${print(l)} + " + " + ${print(r)} }
+      case FunApp(Func.BuiltIn(Symbol.Minus), List(l,r), _) => 
+        '{ ${print(l)} + " - " + ${print(r)} }
+      case FunApp(Func.BuiltIn(Symbol.Mult), List(l,r), _) => 
+        '{ ${print(l)} + " * " + ${print(r)} }                
+      case FunApp(Func.Custom(name), args, _) =>        
+        '{ s"${${Expr(name)}}(${${ Expr.ofSeq(args.map(print)) }.mkString(", ")})" }
 
