@@ -8,7 +8,7 @@ import graceql.context.jdbc.*
 import scala.annotation.targetName
 
 object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
-    
+
   protected def print(tree: Node[Expr, Type])(using Quotes): Expr[String] =
     import Node.*
     tree match
@@ -52,17 +52,24 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
       case Tuple(trees) => '{ ${ Expr.ofSeq(trees.map(print)) }.mkString(", ") }
       case As(tree, name) => '{ s"${${ print(tree) }} AS ${${ Expr(name) }}" }
       case Table(name, _) => name
-      case Literal(value) => 
+      case Literal(value) =>
         value.asExprOf[scala.Any] match
-          case '{$i: String} => '{"\"" + $i + "\""}
-          case v => '{$v.toString} 
-      case Dual()         => '{ "DUAL" }
-      case FunApp(Func.BuiltIn(Symbol.Plus), List(l,r), _) => 
-        '{ ${print(l)} + " + " + ${print(r)} }
-      case FunApp(Func.BuiltIn(Symbol.Minus), List(l,r), _) => 
-        '{ ${print(l)} + " - " + ${print(r)} }
-      case FunApp(Func.BuiltIn(Symbol.Mult), List(l,r), _) => 
-        '{ ${print(l)} + " * " + ${print(r)} }                
-      case FunApp(Func.Custom(name), args, _) =>        
-        '{ s"${${Expr(name)}}(${${ Expr.ofSeq(args.map(print)) }.mkString(", ")})" }
-
+          case '{ $i: String } => '{ "\"" + $i + "\"" }
+          case v               => '{ $v.toString }
+      case Dual() => '{ "DUAL" }
+      case FunApp(func, args, _) =>
+        val encodedArgs = args.map { a =>
+          a match
+            case Literal(_) | SelectCol(_, _) | FunApp(Func.Custom(_), _, _) =>
+              print(a)
+            case _ => '{ "(" + ${ print(a) } + ")" }
+        }
+        (func, encodedArgs) match
+          case (Func.BuiltIn(Symbol.Plus), List(l, r)) =>
+            '{ $l + " + " + $r }
+          case (Func.BuiltIn(Symbol.Minus), List(l, r)) =>
+            '{ $l + " - " + $r }
+          case (Func.BuiltIn(Symbol.Mult), List(l, r)) =>
+            '{ $l + " * " + $r }
+          case (Func.Custom(name), as) =>
+            '{ ${ Expr(name) } + "(" + ${Expr.ofSeq(as)}.mkString(", ") + ")" }

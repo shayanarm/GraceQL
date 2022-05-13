@@ -123,15 +123,15 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  // it should "have no leftovers after parsing" in {
-  //   """
-  //     parseAssert {
-  //       native"select * from ${users.lift} as u leftover".unlift
-  //     } {
-  //       "SELECT * FROM users AS u"
-  //     }
-  //   """ shouldNot compile
-  // }
+  it should "have no leftovers after parsing" in {
+    """
+      parseAssert {
+        native"select * from ${users.lift} as u leftover".unlift
+      } {
+        "SELECT * FROM users AS u"
+      }
+    """ shouldNot compile
+  }
 
   it should "parse a simple arithmetic expression" in {
     parseAssert {
@@ -145,7 +145,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"${2.lift} + ${2.lift} * ${3.lift} - ${1.lift}".unlift
     } {
-      "2 + (2 * 3) - 1"
+      "2 + ((2 * 3) - 1)"
     }
   }
 
@@ -156,12 +156,12 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
       "myfunc(1)"
     }
 
-    // """
-    // parseAssert {
-    //   native"as(${1.lift})".unlift
-    // } {
-    //   "as(1)"
-    // }
-    // """ shouldNot compile
+    """
+    parseAssert {
+      native"as(${1.lift})".unlift
+    } {
+      "as(1)"
+    }
+    """ shouldNot compile
   }
 }
