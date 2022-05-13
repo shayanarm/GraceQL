@@ -8,9 +8,8 @@ import graceql.context.jdbc.*
 import scala.annotation.targetName
 
 object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
-
+  import Node.*
   protected def print(tree: Node[Expr, Type])(using Quotes): Expr[String] =
-    import Node.*
     tree match
       case Select(
             distinct,
@@ -50,7 +49,7 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
         '{ ${ Expr.ofSeq(stmts.map(print)) }.map(q => s"$q;").mkString(" ") }
       case Star()       => '{ "*" }
       case Tuple(trees) => '{ ${ Expr.ofSeq(trees.map(print)) }.mkString(", ") }
-      case As(tree, name) => '{ s"${${ print(tree) }} AS ${${ Expr(name) }}" }
+      case As(tree, name) => '{ ${ print(tree) } + " AS " + ${ Expr(name)} }
       case Table(name, _) => name
       case Literal(value) =>
         value.asExprOf[scala.Any] match
@@ -69,7 +68,20 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
             '{ $l + " + " + $r }
           case (Func.BuiltIn(Symbol.Minus), List(l, r)) =>
             '{ $l + " - " + $r }
+          case (Func.BuiltIn(Symbol.Plus), List(l)) =>
+            l
+          case (Func.BuiltIn(Symbol.Minus), List(l)) =>
+            '{ "-" + $l }            
           case (Func.BuiltIn(Symbol.Mult), List(l, r)) =>
             '{ $l + " * " + $r }
+          case (Func.BuiltIn(Symbol.And), List(l, r)) =>
+            '{ $l + " AND " + $r }
+          case (Func.BuiltIn(Symbol.Or), List(l, r)) =>
+            '{ $l + " OR " + $r }            
           case (Func.Custom(name), as) =>
             '{ ${ Expr(name) } + "(" + ${Expr.ofSeq(as)}.mkString(", ") + ")" }
+
+  override protected def adaptSupport[S[+X] <: Iterable[X], A](tree: Node[Expr, Type])(using q: Quotes, ts: Type[S], ta: Type[A]): Node[Expr, Type] =
+    tree.transform.pre {
+      case TypeAnn(tree, _) => tree
+    }

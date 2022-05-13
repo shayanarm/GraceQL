@@ -19,7 +19,6 @@ object NativeSyntaxSupport extends CompileModule:
     type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
     given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
     import q.reflect.{
-      Tree => _,
       Select => _,
       Block => _,
       Literal => SLiteral,
@@ -46,8 +45,7 @@ object NativeSyntaxSupport extends CompileModule:
           case '{
                 ($c: Q).typed($native: DBIO[a]): DBIO[b]
               } =>
-            // ToDo: Add typing information
-            recurse(ctx)(native)
+            Node.TypeAnn(recurse(ctx)(native), Type.of[b])
           case e =>
             report.errorAndAbort(
               "Native code must only be provided using the `lift` method or the `native` interpolator",

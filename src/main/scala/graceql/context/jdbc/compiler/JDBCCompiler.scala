@@ -24,6 +24,9 @@ trait VendorTreeCompiler[V]:
 
   protected def print(tree: Node[Expr, Type])(using Quotes): Expr[String]
 
+  protected def adaptSupport[S[+X] <: Iterable[X], A](tree: Node[Expr, Type])(using q: Quotes, ts: Type[S], ta: Type[A]): Node[Expr, Type] =
+    tree
+    
   class Delegate[S[+X] <: Iterable[X]](using
       val q: Quotes,
       tv: Type[V],
@@ -76,12 +79,9 @@ trait VendorTreeCompiler[V]:
         appliedToPlaceHolder[Q, A] andThen
           preprocess[A] andThen
           toNative(Context()) andThen
-          adaptSupport andThen
+          adaptSupport[S,A] andThen
           toDBIO[A]
       pipe(expr)
-
-    protected def adaptSupport(tree: Node[Expr, Type]): Node[Expr, Type] =
-      tree
     protected def toDBIO[A](
         tree: Node[Expr, Type]
     )(using ta: Type[A]): Expr[DBIO[A]] =

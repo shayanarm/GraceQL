@@ -92,6 +92,7 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
   case TypeLit[L[_], T[_], A](tpe: T[A]) extends Node[L, T](Nil)
   case Cast[L[_], T[_], A](tree: Node[L, T], tpe: T[A])
       extends Node[L, T](List(tree))
+  case TypeAnn[L[_], T[_], A](tree: Node[L, T], tpe: T[A]) extends Node[L, T](List(tree))    
   case Join[L[_], T[_]](joinType: JoinType, tree: Node[L, T], on: Node[L, T])
       extends Node[L, T](List(tree, on))
   case GroupBy[L[_], T[_]](by: List[Node[L, T]], having: Option[Node[L, T]])
@@ -113,64 +114,8 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
       extends Node[L, T](List(tree))
   case Block[L[_], T[_]](stmts: List[Node[L, T]]) extends Node[L, T](stmts)
 
-  object traversal:
-    def preOrder(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
-      val g = f.orElse { case t => t }
-      val n = node match
-        case Literal(_) => node
-        case Select(
-              distinct,
-              columns,
-              from,
-              joins,
-              where,
-              groupBy,
-              orderBy,
-              offset,
-              limit
-            ) =>
-          Select(
-            distinct,
-            columns.traversal.preOrder(f),
-            from.traversal.preOrder(f),
-            joins.map(_.traversal.preOrder(f)),
-            where.map(_.traversal.preOrder(f)),
-            groupBy.map(_.traversal.preOrder(f)),
-            orderBy.map(_.traversal.preOrder(f)),
-            offset.map(_.traversal.preOrder(f)),
-            limit.map(_.traversal.preOrder(f))
-          )
-        case Star()          => node
-        case Column(_)       => node
-        case Tuple(elems)    => Tuple(elems.map(_.traversal.preOrder(f)))
-        case Table(_, _)     => node
-        case Values(_)       => node
-        case Dual()          => node
-        case As(t, n)        => As(t.traversal.preOrder(f), n)
-        case Ref(_)          => node
-        case SelectCol(t, c) => SelectCol(t.traversal.preOrder(f), c)
-        case FunApp(n, args, tpe) =>
-          FunApp(n, args.map(_.traversal.preOrder(f)), tpe)
-        case TypeLit(_)   => node
-        case Cast(t, tpe) => Cast(t.traversal.preOrder(f), tpe)
-        case Join(jt, t, on) =>
-          Join(jt, t.traversal.preOrder(f), on.traversal.preOrder(f))
-        case GroupBy(ns, having) =>
-          GroupBy(
-            ns.map(_.traversal.preOrder(f)),
-            having.map(_.traversal.preOrder(f))
-          )
-        case Null() => node
-        case Any(c, o, s) =>
-          Any(c.traversal.preOrder(f), o, s.traversal.preOrder(f))
-        case All(c, o, s) =>
-          All(c.traversal.preOrder(f), o, s.traversal.preOrder(f))
-        case Union(l, r) =>
-          Union(l.traversal.preOrder(f), r.traversal.preOrder(f))
-        case Ordered(t, o) => Ordered(t.traversal.preOrder(f), o)
-        case Block(stmts)  => Block(stmts.map(_.traversal.preOrder(f)))
-      g(n)
-    def postOrder(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
+  object transform:
+    def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
       val g = f.orElse { case t => t }
       g(node) match
         case Literal(_) => node
@@ -187,49 +132,109 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
             ) =>
           Select(
             distinct,
-            columns.traversal.postOrder(f),
-            from.traversal.postOrder(f),
-            joins.map(_.traversal.postOrder(f)),
-            where.map(_.traversal.postOrder(f)),
-            groupBy.map(_.traversal.postOrder(f)),
-            orderBy.map(_.traversal.postOrder(f)),
-            offset.map(_.traversal.postOrder(f)),
-            limit.map(_.traversal.postOrder(f))
+            columns.transform.pre(f),
+            from.transform.pre(f),
+            joins.map(_.transform.pre(f)),
+            where.map(_.transform.pre(f)),
+            groupBy.map(_.transform.pre(f)),
+            orderBy.map(_.transform.pre(f)),
+            offset.map(_.transform.pre(f)),
+            limit.map(_.transform.pre(f))
           )
         case Star()          => node
         case Column(_)       => node
-        case Tuple(elems)    => Tuple(elems.map(_.traversal.postOrder(f)))
+        case Tuple(elems)    => Tuple(elems.map(_.transform.pre(f)))
         case Table(_, _)     => node
         case Values(_)       => node
         case Dual()          => node
-        case As(t, n)        => As(t.traversal.postOrder(f), n)
+        case As(t, n)        => As(t.transform.pre(f), n)
         case Ref(_)          => node
-        case SelectCol(t, c) => SelectCol(t.traversal.postOrder(f), c)
+        case SelectCol(t, c) => SelectCol(t.transform.pre(f), c)
         case FunApp(n, args, tpe) =>
-          FunApp(n, args.map(_.traversal.postOrder(f)), tpe)
+          FunApp(n, args.map(_.transform.pre(f)), tpe)
         case TypeLit(_)   => node
-        case Cast(t, tpe) => Cast(t.traversal.postOrder(f), tpe)
+        case Cast(t, tpe) => Cast(t.transform.pre(f), tpe)
+        case TypeAnn(t, tpe) => TypeAnn(t.transform.pre(f), tpe)
         case Join(jt, t, on) =>
-          Join(jt, t.traversal.postOrder(f), on.traversal.postOrder(f))
+          Join(jt, t.transform.pre(f), on.transform.pre(f))
         case GroupBy(ns, having) =>
           GroupBy(
-            ns.map(_.traversal.postOrder(f)),
-            having.map(_.traversal.postOrder(f))
+            ns.map(_.transform.pre(f)),
+            having.map(_.transform.pre(f))
           )
         case Null() => node
         case Any(c, o, s) =>
-          Any(c.traversal.postOrder(f), o, s.traversal.postOrder(f))
+          Any(c.transform.pre(f), o, s.transform.pre(f))
         case All(c, o, s) =>
-          All(c.traversal.postOrder(f), o, s.traversal.postOrder(f))
+          All(c.transform.pre(f), o, s.transform.pre(f))
         case Union(l, r) =>
-          Union(l.traversal.postOrder(f), r.traversal.postOrder(f))
-        case Ordered(t, o) => Ordered(t.traversal.postOrder(f), o)
-        case Block(stmts)  => Block(stmts.map(_.traversal.postOrder(f)))
-    inline def transformLit[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] =
-      transformBoth(f, [x] => (i: T[x]) => i)
-    inline def transformType[T2[_]](f: [A] => T[A] => T2[A]): Node[L, T2] =
-      transformBoth([x] => (i: L[x]) => i, f)
-    def transformBoth[L2[_], T2[_]](
+          Union(l.transform.pre(f), r.transform.pre(f))
+        case Ordered(t, o) => Ordered(t.transform.pre(f), o)
+        case Block(stmts)  => Block(stmts.map(_.transform.pre(f)))
+        
+    def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
+      val g = f.orElse { case t => t }
+      val n = node match
+        case Literal(_) => node
+        case Select(
+              distinct,
+              columns,
+              from,
+              joins,
+              where,
+              groupBy,
+              orderBy,
+              offset,
+              limit
+            ) =>
+          Select(
+            distinct,
+            columns.transform.post(f),
+            from.transform.post(f),
+            joins.map(_.transform.post(f)),
+            where.map(_.transform.post(f)),
+            groupBy.map(_.transform.post(f)),
+            orderBy.map(_.transform.post(f)),
+            offset.map(_.transform.post(f)),
+            limit.map(_.transform.post(f))
+          )
+        case Star()          => node
+        case Column(_)       => node
+        case Tuple(elems)    => Tuple(elems.map(_.transform.post(f)))
+        case Table(_, _)     => node
+        case Values(_)       => node
+        case Dual()          => node
+        case As(t, n)        => As(t.transform.post(f), n)
+        case Ref(_)          => node
+        case SelectCol(t, c) => SelectCol(t.transform.post(f), c)
+        case FunApp(n, args, tpe) =>
+          FunApp(n, args.map(_.transform.post(f)), tpe)
+        case TypeLit(_)   => node
+        case Cast(t, tpe) => Cast(t.transform.post(f), tpe)
+        case TypeAnn(t, tpe) => TypeAnn(t.transform.post(f), tpe)
+        case Join(jt, t, on) =>
+          Join(jt, t.transform.post(f), on.transform.post(f))
+        case GroupBy(ns, having) =>
+          GroupBy(
+            ns.map(_.transform.post(f)),
+            having.map(_.transform.post(f))
+          )
+        case Null() => node
+        case Any(c, o, s) =>
+          Any(c.transform.post(f), o, s.transform.post(f))
+        case All(c, o, s) =>
+          All(c.transform.post(f), o, s.transform.post(f))
+        case Union(l, r) =>
+          Union(l.transform.post(f), r.transform.post(f))
+        case Ordered(t, o) => Ordered(t.transform.post(f), o)
+        case Block(stmts)  => Block(stmts.map(_.transform.post(f)))
+      g(n)  
+
+    inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] =
+      both(f, [x] => (i: T[x]) => i)
+    inline def types[T2[_]](f: [A] => T[A] => T2[A]): Node[L, T2] =
+      both([x] => (i: L[x]) => i, f)
+    def both[L2[_], T2[_]](
         fl: [X] => L[X] => L2[X],
         ft: [Y] => T[Y] => T2[Y]
     ): Node[L2, T2] =
@@ -248,63 +253,64 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
             ) =>
           Select(
             distinct,
-            columns.traversal.transformBoth(fl, ft),
-            from.traversal.transformBoth(fl, ft),
-            joins.map(_.traversal.transformBoth(fl, ft)),
-            where.map(_.traversal.transformBoth(fl, ft)),
-            groupBy.map(_.traversal.transformBoth(fl, ft)),
-            orderBy.map(_.traversal.transformBoth(fl, ft)),
-            offset.map(_.traversal.transformBoth(fl, ft)),
-            limit.map(_.traversal.transformBoth(fl, ft))
+            columns.transform.both(fl, ft),
+            from.transform.both(fl, ft),
+            joins.map(_.transform.both(fl, ft)),
+            where.map(_.transform.both(fl, ft)),
+            groupBy.map(_.transform.both(fl, ft)),
+            orderBy.map(_.transform.both(fl, ft)),
+            offset.map(_.transform.both(fl, ft)),
+            limit.map(_.transform.both(fl, ft))
           )
         case Star()       => Star()
         case Column(n)    => Column(n)
-        case Tuple(elems) => Tuple(elems.map(_.traversal.transformBoth(fl, ft)))
+        case Tuple(elems) => Tuple(elems.map(_.transform.both(fl, ft)))
         case Table(n, t)  => Table(fl(n), ft(t))
         case Values(ls)   => Values(fl(ls))
         case Dual()       => Dual()
-        case As(t, n)     => As(t.traversal.transformBoth(fl, ft), n)
+        case As(t, n)     => As(t.transform.both(fl, ft), n)
         case Ref(n)       => Ref(n)
-        case SelectCol(t, c) => SelectCol(t.traversal.transformBoth(fl, ft), c)
+        case SelectCol(t, c) => SelectCol(t.transform.both(fl, ft), c)
         case FunApp(n, args, tpe) =>
           FunApp(
             n,
-            args.map(_.traversal.transformBoth(fl, ft)),
+            args.map(_.transform.both(fl, ft)),
             tpe.map(i => ft(i))
           )
         case TypeLit(tpe) => TypeLit(ft(tpe))
-        case Cast(t, tpe) => Cast(t.traversal.transformBoth(fl, ft), ft(tpe))
+        case Cast(t, tpe) => Cast(t.transform.both(fl, ft), ft(tpe))
+        case TypeAnn(t, tpe) => TypeAnn(t.transform.both(fl, ft), ft(tpe))
         case Join(jt, t, on) =>
           Join(
             jt,
-            t.traversal.transformBoth(fl, ft),
-            on.traversal.transformBoth(fl, ft)
+            t.transform.both(fl, ft),
+            on.transform.both(fl, ft)
           )
         case GroupBy(ns, having) =>
           GroupBy(
-            ns.map(_.traversal.transformBoth(fl, ft)),
-            having.map(_.traversal.transformBoth(fl, ft))
+            ns.map(_.transform.both(fl, ft)),
+            having.map(_.transform.both(fl, ft))
           )
         case Null() => Null()
         case Any(c, o, s) =>
           Any(
-            c.traversal.transformBoth(fl, ft),
+            c.transform.both(fl, ft),
             o,
-            s.traversal.transformBoth(fl, ft)
+            s.transform.both(fl, ft)
           )
         case All(c, o, s) =>
           All(
-            c.traversal.transformBoth(fl, ft),
+            c.transform.both(fl, ft),
             o,
-            s.traversal.transformBoth(fl, ft)
+            s.transform.both(fl, ft)
           )
         case Union(l, r) =>
           Union(
-            l.traversal.transformBoth(fl, ft),
-            r.traversal.transformBoth(fl, ft)
+            l.transform.both(fl, ft),
+            r.transform.both(fl, ft)
           )
-        case Ordered(t, o) => Ordered(t.traversal.transformBoth(fl, ft), o)
-        case Block(stmts) => Block(stmts.map(_.traversal.transformBoth(fl, ft)))
+        case Ordered(t, o) => Ordered(t.transform.both(fl, ft), o)
+        case Block(stmts) => Block(stmts.map(_.transform.both(fl, ft)))
 
 object Node:
   inline def parse[L[_], T[_]](sc: StringContext)(
@@ -366,8 +372,8 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   object written:
     def selectQuery: Parser[N] =
       (kw.select ~> kw.distinct.?) ~ selectColumns ~ (kw.from ~> src) ~ selectClauses ^^ {
-        case distinct ~ colset ~ from ~ (joins, where, groupBy, orderBy, offset,
-            limit) =>
+        case distinct ~ colset ~ from ~ (
+          joins, where, groupBy, orderBy, offset,limit ) =>
           Select(
             distinct.isDefined,
             colset,
@@ -380,6 +386,9 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
             limit
           )
       }
+    def selectClauses
+        : Parser[(List[N], Option[N], Option[N], List[N], Option[N], Option[N])] =
+      success((Nil, None, None, Nil, None, None))      
     def parens(required: Boolean)(without: => Parser[N]): Parser[N] =
       val `with` = "(" ~> parens(false)(without) <~ ")"
       if required then `with` else `with` | without
@@ -460,9 +469,6 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     embedded.selectQuery | written.selectQuery
   def selectColumns: Parser[N] =
     written.tuple(written.aliased(false)(expr)) | embedded.tuple | written.star
-  def selectClauses
-      : Parser[(List[N], Option[N], Option[N], List[N], Option[N], Option[N])] =
-    success((Nil, None, None, Nil, None, None))
   def subquery: Parser[N] = written.parens(false)(
     embedded.selectQuery
   ) | written.parens(true)(written.selectQuery)
