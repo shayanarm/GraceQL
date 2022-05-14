@@ -114,7 +114,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  it should "parse a query without requiring parenthesis for the embedded subquery" in {
+  it should "parse a query without requiring parentheses for the embedded subquery" in {
     parseAssert {
       val sub = native"SELECT * FROM DUAL"
       native"SELECT * FROM (SELECT * FROM ${sub})".unlift

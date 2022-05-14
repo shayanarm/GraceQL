@@ -54,65 +54,55 @@ enum Symbol:
 object Symbol:
   Symbol.values
 
-enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
+type Join[L[_], T[_]] = (JoinType, Node[L, T], Node[L, T])
+type Ordered[L[_], T[_]] = (Node[L, T], Order)
+type GroupBy[L[_], T[_]] = (List[Node[L, T]], Option[Node[L, T]])
+
+enum Node[L[_], T[_]]:
   node =>
-  case Literal[L[_], T[_], A](value: L[A]) extends Node[L, T](Nil)
+  case Literal[L[_], T[_], A](value: L[A]) extends Node[L, T]
   case Select[L[_], T[_]](
       distinct: Boolean,
       columns: Node[L, T],
       from: Node[L, T],
-      joins: List[Node[L, T]],
+      joins: List[Join[L, T]],
       where: Option[Node[L, T]],
-      groupBy: Option[Node[L, T]],
-      orderBy: List[Node[L, T]],
+      groupBy: Option[GroupBy[L, T]],
+      orderBy: List[Ordered[L, T]],
       offset: Option[Node[L, T]],
       limit: Option[Node[L, T]]
-  ) extends Node[L, T](
-        List(
-          columns,
-          from
-        ) ++ joins ++ where ++ groupBy ++ orderBy ++ offset ++ limit
-      )
-  case Star() extends Node[L, T](Nil)
-  case Column(name: String) extends Node[L, T](Nil)
-  case Tuple[L[_], T[_]](columns: List[Node[L, T]]) extends Node[L, T](columns)
-  case Table[L[_], T[_], A](table: L[String], tpe: T[A]) extends Node[L, T](Nil)
-  case Values[L[_], T[_], A](values: L[Iterable[A]]) extends Node[L, T](Nil)
-  case Dual() extends Node[L, T](Nil)
-  case As[L[_], T[_]](tree: Node[L, T], alias: String)
-      extends Node[L, T](List(tree))
-  case Ref(name: String) extends Node[L, T](Nil)
+  ) extends Node[L, T]
+  case Star() extends Node[L, T]
+  case Column(name: String) extends Node[L, T]
+  case Tuple[L[_], T[_]](columns: List[Node[L, T]]) extends Node[L, T]
+  case Table[L[_], T[_], A](table: L[String], tpe: T[A]) extends Node[L, T]
+  case Values[L[_], T[_], A](values: L[Iterable[A]]) extends Node[L, T]
+  case Dual() extends Node[L, T]
+  case As[L[_], T[_]](tree: Node[L, T], alias: String) extends Node[L, T]
+  case Ref(name: String) extends Node[L, T]
   case SelectCol[L[_], T[_]](tree: Node[L, T], column: String)
-      extends Node[L, T](List(tree))
+      extends Node[L, T]
   case FunApp[L[_], T[_], A](
       name: Func,
       args: List[Node[L, T]],
       returnType: Option[T[A]]
-  ) extends Node[L, T](args)
-  case TypeLit[L[_], T[_], A](tpe: T[A]) extends Node[L, T](Nil)
-  case Cast[L[_], T[_], A](tree: Node[L, T], tpe: T[A])
-      extends Node[L, T](List(tree))
-  case TypeAnn[L[_], T[_], A](tree: Node[L, T], tpe: T[A]) extends Node[L, T](List(tree))    
-  case Join[L[_], T[_]](joinType: JoinType, tree: Node[L, T], on: Node[L, T])
-      extends Node[L, T](List(tree, on))
-  case GroupBy[L[_], T[_]](by: List[Node[L, T]], having: Option[Node[L, T]])
-      extends Node[L, T](by ++ having)
-  case Null() extends Node[L, T](Nil)
+  ) extends Node[L, T]
+  case TypeLit[L[_], T[_], A](tpe: T[A]) extends Node[L, T]
+  case Cast[L[_], T[_], A](tree: Node[L, T], tpe: T[A]) extends Node[L, T]
+  case TypeAnn[L[_], T[_], A](tree: Node[L, T], tpe: T[A]) extends Node[L, T]
+  case Null() extends Node[L, T]
   case Any[L[_], T[_]](
       column: Node[L, T],
       operator: Symbol,
       subquery: Node[L, T]
-  ) extends Node[L, T](List(column, subquery))
+  ) extends Node[L, T]
   case All[L[_], T[_]](
       column: Node[L, T],
       operator: Symbol,
       subquery: Node[L, T]
-  ) extends Node[L, T](List(column, subquery))
-  case Union[L[_], T[_]](left: Node[L, T], right: Node[L, T])
-      extends Node[L, T](List(left, right))
-  case Ordered[L[_], T[_]](tree: Node[L, T], order: Order)
-      extends Node[L, T](List(tree))
-  case Block[L[_], T[_]](stmts: List[Node[L, T]]) extends Node[L, T](stmts)
+  ) extends Node[L, T]
+  case Union[L[_], T[_]](left: Node[L, T], right: Node[L, T]) extends Node[L, T]
+  case Block[L[_], T[_]](stmts: List[Node[L, T]]) extends Node[L, T]
 
   object transform:
     def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
@@ -134,10 +124,14 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
             distinct,
             columns.transform.pre(f),
             from.transform.pre(f),
-            joins.map(_.transform.pre(f)),
+            joins.map { case (jt, s, o) =>
+              (jt, s.transform.pre(f), o.transform.pre(f))
+            },
             where.map(_.transform.pre(f)),
-            groupBy.map(_.transform.pre(f)),
-            orderBy.map(_.transform.pre(f)),
+            groupBy.map { case (es, h) =>
+              (es.map(_.transform.pre(f)), h.map(_.transform.pre(f)))
+            },
+            orderBy.map { case (t, o) => (t.transform.pre(f), o) },
             offset.map(_.transform.pre(f)),
             limit.map(_.transform.pre(f))
           )
@@ -152,26 +146,18 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
         case SelectCol(t, c) => SelectCol(t.transform.pre(f), c)
         case FunApp(n, args, tpe) =>
           FunApp(n, args.map(_.transform.pre(f)), tpe)
-        case TypeLit(_)   => node
-        case Cast(t, tpe) => Cast(t.transform.pre(f), tpe)
+        case TypeLit(_)      => node
+        case Cast(t, tpe)    => Cast(t.transform.pre(f), tpe)
         case TypeAnn(t, tpe) => TypeAnn(t.transform.pre(f), tpe)
-        case Join(jt, t, on) =>
-          Join(jt, t.transform.pre(f), on.transform.pre(f))
-        case GroupBy(ns, having) =>
-          GroupBy(
-            ns.map(_.transform.pre(f)),
-            having.map(_.transform.pre(f))
-          )
-        case Null() => node
+        case Null()          => node
         case Any(c, o, s) =>
           Any(c.transform.pre(f), o, s.transform.pre(f))
         case All(c, o, s) =>
           All(c.transform.pre(f), o, s.transform.pre(f))
         case Union(l, r) =>
           Union(l.transform.pre(f), r.transform.pre(f))
-        case Ordered(t, o) => Ordered(t.transform.pre(f), o)
-        case Block(stmts)  => Block(stmts.map(_.transform.pre(f)))
-        
+        case Block(stmts) => Block(stmts.map(_.transform.pre(f)))
+
     def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
       val g = f.orElse { case t => t }
       val n = node match
@@ -184,17 +170,21 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
               where,
               groupBy,
               orderBy,
-              offset,
-              limit
+              limit,
+              offset
             ) =>
           Select(
             distinct,
             columns.transform.post(f),
             from.transform.post(f),
-            joins.map(_.transform.post(f)),
+            joins.map { case (jt, s, o) =>
+              (jt, s.transform.post(f), o.transform.post(f))
+            },
             where.map(_.transform.post(f)),
-            groupBy.map(_.transform.post(f)),
-            orderBy.map(_.transform.post(f)),
+            groupBy.map { case (es, h) =>
+              (es.map(_.transform.post(f)), h.map(_.transform.post(f)))
+            },
+            orderBy.map { case (t, o) => (t.transform.post(f), o) },
             offset.map(_.transform.post(f)),
             limit.map(_.transform.post(f))
           )
@@ -209,26 +199,18 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
         case SelectCol(t, c) => SelectCol(t.transform.post(f), c)
         case FunApp(n, args, tpe) =>
           FunApp(n, args.map(_.transform.post(f)), tpe)
-        case TypeLit(_)   => node
-        case Cast(t, tpe) => Cast(t.transform.post(f), tpe)
+        case TypeLit(_)      => node
+        case Cast(t, tpe)    => Cast(t.transform.post(f), tpe)
         case TypeAnn(t, tpe) => TypeAnn(t.transform.post(f), tpe)
-        case Join(jt, t, on) =>
-          Join(jt, t.transform.post(f), on.transform.post(f))
-        case GroupBy(ns, having) =>
-          GroupBy(
-            ns.map(_.transform.post(f)),
-            having.map(_.transform.post(f))
-          )
-        case Null() => node
+        case Null()          => node
         case Any(c, o, s) =>
           Any(c.transform.post(f), o, s.transform.post(f))
         case All(c, o, s) =>
           All(c.transform.post(f), o, s.transform.post(f))
         case Union(l, r) =>
           Union(l.transform.post(f), r.transform.post(f))
-        case Ordered(t, o) => Ordered(t.transform.post(f), o)
-        case Block(stmts)  => Block(stmts.map(_.transform.post(f)))
-      g(n)  
+        case Block(stmts) => Block(stmts.map(_.transform.post(f)))
+      g(n)
 
     inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] =
       both(f, [x] => (i: T[x]) => i)
@@ -255,21 +237,25 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
             distinct,
             columns.transform.both(fl, ft),
             from.transform.both(fl, ft),
-            joins.map(_.transform.both(fl, ft)),
+            joins.map { case (jt, s, on) =>
+              (jt, s.transform.both(fl, ft), on.transform.both(fl, ft))
+            },
             where.map(_.transform.both(fl, ft)),
-            groupBy.map(_.transform.both(fl, ft)),
-            orderBy.map(_.transform.both(fl, ft)),
+            groupBy.map { case (e, h) =>
+              (e.map(_.transform.both(fl, ft)), h.map(_.transform.both(fl, ft)))
+            },
+            orderBy.map { case (t, o) => (t.transform.both(fl, ft), o) },
             offset.map(_.transform.both(fl, ft)),
             limit.map(_.transform.both(fl, ft))
           )
-        case Star()       => Star()
-        case Column(n)    => Column(n)
-        case Tuple(elems) => Tuple(elems.map(_.transform.both(fl, ft)))
-        case Table(n, t)  => Table(fl(n), ft(t))
-        case Values(ls)   => Values(fl(ls))
-        case Dual()       => Dual()
-        case As(t, n)     => As(t.transform.both(fl, ft), n)
-        case Ref(n)       => Ref(n)
+        case Star()          => Star()
+        case Column(n)       => Column(n)
+        case Tuple(elems)    => Tuple(elems.map(_.transform.both(fl, ft)))
+        case Table(n, t)     => Table(fl(n), ft(t))
+        case Values(ls)      => Values(fl(ls))
+        case Dual()          => Dual()
+        case As(t, n)        => As(t.transform.both(fl, ft), n)
+        case Ref(n)          => Ref(n)
         case SelectCol(t, c) => SelectCol(t.transform.both(fl, ft), c)
         case FunApp(n, args, tpe) =>
           FunApp(
@@ -277,21 +263,10 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
             args.map(_.transform.both(fl, ft)),
             tpe.map(i => ft(i))
           )
-        case TypeLit(tpe) => TypeLit(ft(tpe))
-        case Cast(t, tpe) => Cast(t.transform.both(fl, ft), ft(tpe))
+        case TypeLit(tpe)    => TypeLit(ft(tpe))
+        case Cast(t, tpe)    => Cast(t.transform.both(fl, ft), ft(tpe))
         case TypeAnn(t, tpe) => TypeAnn(t.transform.both(fl, ft), ft(tpe))
-        case Join(jt, t, on) =>
-          Join(
-            jt,
-            t.transform.both(fl, ft),
-            on.transform.both(fl, ft)
-          )
-        case GroupBy(ns, having) =>
-          GroupBy(
-            ns.map(_.transform.both(fl, ft)),
-            having.map(_.transform.both(fl, ft))
-          )
-        case Null() => Null()
+        case Null()          => Null()
         case Any(c, o, s) =>
           Any(
             c.transform.both(fl, ft),
@@ -309,7 +284,6 @@ enum Node[L[_], T[_]](val childern: List[Node[L, T]]):
             l.transform.both(fl, ft),
             r.transform.both(fl, ft)
           )
-        case Ordered(t, o) => Ordered(t.transform.both(fl, ft), o)
         case Block(stmts) => Block(stmts.map(_.transform.both(fl, ft)))
 
 object Node:
@@ -348,7 +322,23 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       "or" -> """(?i)or""".r,
       "in" -> """(?i)in""".r,
       "like" -> """(?i)like""".r,
-      "between" -> """(?i)between""".r
+      "between" -> """(?i)between""".r,
+      "where" -> """(?i)where""".r,
+      "by" -> """(?i)by""".r,
+      "group" -> """(?i)group""".r,
+      "order" -> """(?i)order""".r,
+      "offset" -> """(?i)offset""".r,
+      "limit" -> """(?i)limit""".r,
+      "join" -> """(?i)join""".r,
+      "inner" -> """(?i)inner""".r,
+      "left" -> """(?i)left""".r,
+      "right" -> """(?i)right""".r,
+      "full" -> """(?i)full""".r,
+      "cross" -> """(?i)cross""".r,
+      "on" -> """(?i)on""".r,
+      "having" -> """(?i)having""".r,
+      "asc" -> """(?i)asc""".r,
+      "desc" -> """(?i)desc""".r
     )
     def select = registry("select")
     def distinct = registry("distinct")
@@ -368,110 +358,22 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     def in = registry("in")
     def like = registry("like")
     def between = registry("between")
-
-  object written:
-    def selectQuery: Parser[N] =
-      (kw.select ~> kw.distinct.?) ~ selectColumns ~ (kw.from ~> src) ~ selectClauses ^^ {
-        case distinct ~ colset ~ from ~ (
-          joins, where, groupBy, orderBy, offset,limit ) =>
-          Select(
-            distinct.isDefined,
-            colset,
-            from,
-            joins,
-            where,
-            groupBy,
-            orderBy,
-            offset,
-            limit
-          )
-      }
-    def selectClauses
-        : Parser[(List[N], Option[N], Option[N], List[N], Option[N], Option[N])] =
-      success((Nil, None, None, Nil, None, None))      
-    def parens(required: Boolean)(without: => Parser[N]): Parser[N] =
-      val `with` = "(" ~> parens(false)(without) <~ ")"
-      if required then `with` else `with` | without
-    def dual: Parser[N] = kw.dual ^^ { _ => Dual() }
-    def ident: Parser[String] = """[a-zA-Z][a-zA-Z0-9_]*""".r ^? ({
-      case p if !kw.registry.values.exists(r => r.matches(p)) => p
-    }, t => s"Keyword \"${t}\" cannot be used as identifier")
-    def ref: Parser[N] = ident ^^ { r => Ref(r) }
-    def updateQuery: Parser[N] = ???
-    def deleteQuery: Parser[N] = ???
-    def insertQuery: Parser[N] = ???
-    def createQuery: Parser[N] = ???
-    def dropQuery: Parser[N] = ???
-    def block: Parser[N] = rep1sep(query, ";") ^^ {
-      case Nil      => Block(Nil)
-      case h +: Nil => h
-      case l        => Block(l)
-    }
-    def tuple(of: => Parser[N]): Parser[N] =
-      rep1sep(of, ",".r) ^^ { r => Tuple(r) }
-
-    def star: Parser[N] = kw.star ^^ { _ => Star() }
-
-    def aliased(required: Boolean)(
-        of: => Parser[N]
-    ): Parser[N] =
-      val alias = kw.as.? ~> written.ident
-      required match
-        case false =>
-          of ~ alias.? ^^ {
-            case o ~ Some(i) => As(o, i)
-            case o ~ _       => o
-          }
-        case true => of ~ alias ^^ { case o ~ i => As(o, i) }
-
-  object embedded:
-    def apply[A](
-        f: PartialFunction[N, A],
-        nodeName: String
-    ) = (""":""".r ~> """\d+""".r) ^^ { i => args(i.toInt) } ^? (f, t =>
-      s"Expected \"${nodeName}\" reference, but found $t")
-
-    def table: Parser[N] = apply(
-      { case t: Table[_, _, _] => t },
-      "Table"
-    )
-
-    def literal: Parser[N] = apply(
-      { case t: Literal[_, _, _] => t },
-      "Literal"
-    )
-
-    def selectQuery: Parser[N] = apply(
-      { case t: Select[_, _] => t },
-      "SELECT"
-    )
-
-    def tuple: Parser[N] = apply(
-      { case t: Tuple[_, _] => t },
-      "Tuple"
-    )
-
-    def funApp: Parser[N] = apply(
-      { case t: FunApp[_, _, _] => t },
-      "FunApp"
-    )
-
-    def values: Parser[N] = apply(
-      { case t: Values[_, _, _] => t },
-      "Values"
-    )
-
-  def sql: Parser[N] = block | query | expr
-  def block = written.block
-  def query: Parser[N] =
-    selectQuery // | updateQuery | deleteQuery | insertQuery | createQuery | dropQuery
-  def selectQuery: Parser[N] =
-    embedded.selectQuery | written.selectQuery
-  def selectColumns: Parser[N] =
-    written.tuple(written.aliased(false)(expr)) | embedded.tuple | written.star
-  def subquery: Parser[N] = written.parens(false)(
-    embedded.selectQuery
-  ) | written.parens(true)(written.selectQuery)
+    def where = registry("where")
+    def by = registry("by")
+    def group = registry("group")
+    def order = registry("order")
+    def offset = registry("offset")
+    def limit = registry("limit")
+    def join = registry("join")
+    def inner = registry("inner")
+    def left = registry("left")
+    def right = registry("right")
+    def full = registry("full")
+    def cross = registry("cross")
+    def on = registry("on")
+    def having = registry("having")
+    def asc = registry("asc")
+    def desc = registry("desc")
 
   object operand:
     def - : Parser[Func] = "-" ^^ { _ => Func.BuiltIn(Symbol.Minus) }
@@ -491,6 +393,149 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     def || : Parser[Func] = "||" ^^ { _ => Func.BuiltIn(Symbol.Or) }
     def ^ : Parser[Func] = "^" ^^ { _ => Func.BuiltIn(Symbol.BWOr) }
     def logicals: List[Parser[Func]] = List(`=`, !=, >, >=, <, <=)
+
+  object embedded:
+    def apply[A](
+        f: PartialFunction[N, A],
+        nodeName: String
+    ) = (""":""".r ~> """\d+""".r) ^^ { i => args(i.toInt) } ^? (f, t =>
+      s"Expected \"${nodeName}\" reference, but found $t")
+
+    def table: Parser[N] = apply(
+      { case t: Table[_, _, _] => t },
+      "Table"
+    )
+
+    def block: Parser[N] = apply(
+      { case t: Block[_, _] => t },
+      "Block"
+    )
+
+    def literal: Parser[N] = apply(
+      { case t: Literal[_, _, _] => t },
+      "Literal"
+    )
+
+    def selectQuery: Parser[N] = apply(
+      { case t: Select[_, _] => t },
+      "Select"
+    )
+
+    def tuple: Parser[N] = apply(
+      { case t: Tuple[_, _] => t },
+      "Tuple"
+    )
+
+    def funApp: Parser[N] = apply(
+      { case t: FunApp[_, _, _] => t },
+      "FunApp"
+    )
+
+    def ref: Parser[N] = apply(
+      { case t: Ref[_, _] => t },
+      "Ref"
+    )
+
+    def values: Parser[N] = apply(
+      { case t: Values[_, _, _] => t },
+      "Values"
+    )
+
+    def dual: Parser[N] = apply(
+      { case t: Dual[_, _] => t },
+      "Dual"
+    )
+
+    def star: Parser[N] = apply(
+      { case t: Star[_, _] => t },
+      "Star"
+    )
+
+  object selectQuery extends Parser[N]:
+    def join: Parser[Join[L, T]] =
+      def inner = kw.inner ~> kw.join ^^ { case _ => JoinType.Inner }
+      def left = kw.left ~> kw.join ^^ { case _ => JoinType.Left }
+      def right = kw.right ~> kw.join ^^ { case _ => JoinType.Right }
+      def full = kw.full ~> kw.join ^^ { case _ => JoinType.Full }
+      def cross = kw.cross ~> kw.join ^^ { case _ => JoinType.Cross }
+      (inner | left | right | full | cross) ~ src ~ (kw.on ~> expr) ^^ {
+        case jt ~ s ~ e => (jt, s, e)
+      }
+    def where: Parser[N] = kw.where ~> expr
+    def groupBy: Parser[GroupBy[L,T]] = kw.group ~> kw.by ~> tuple(expr) ~ (kw.having ~> expr).? ^^ {case Tuple(es) ~ h => (es, h)}
+    def orderBy: Parser[List[Ordered[L,T]]] = 
+      val asc = kw.asc ^^ {_ => Order.Asc}
+      val desc = kw.desc ^^ {_ => Order.Desc}
+      val ord = (asc | desc).? ^^ (_.getOrElse(Order.Asc))
+      kw.order ~> kw.by ~> rep1sep(expr ~ ord, ",".r) ^^ {es =>
+        es.map{case e ~ o => (e, o)}
+      }
+    def offset: Parser[N] = kw.offset ~> expr
+    def limit: Parser[N] = kw.limit ~> expr
+    def selectColumns: Parser[N] =
+      tuple(aliased(false)(expr)) | star
+
+    def apply(v: Input): ParseResult[N] =
+      def written =
+        (kw.select ~> kw.distinct.?) ~ selectColumns ~ (kw.from ~> src) ~ rep(join) ~ where.? ~ groupBy.? ~ orderBy.? ~ limit.? ~ offset.? ^^ {
+          case distinct ~ colset ~ from ~ joins ~ where ~ groupBy ~ orderBy ~ limit ~ offset =>
+            Select(
+              distinct.isDefined,
+              colset,
+              from,
+              joins,
+              where,
+              groupBy,
+              orderBy.to(List).flatten,
+              offset,
+              limit
+            )
+        }
+      (embedded.selectQuery | written)(v)
+  def parens(required: Boolean)(without: => Parser[N]): Parser[N] =
+    val `with` = "(" ~> parens(false)(without) <~ ")"
+    if required then `with` else `with` | without
+  def dual: Parser[N] = embedded.dual | kw.dual ^^ { _ => Dual() }
+  def ident: Parser[String] = """[a-zA-Z][a-zA-Z0-9_]*""".r ^? ({
+    case p if !kw.registry.values.exists(r => r.matches(p)) => p
+  }, t => s"Keyword \"${t}\" cannot be used as identifier")
+  def ref: Parser[N] =
+    embedded.ref | ident ^^ { r => Ref(r) }
+  def updateQuery: Parser[N] = ???
+  def deleteQuery: Parser[N] = ???
+  def insertQuery: Parser[N] = ???
+  def createQuery: Parser[N] = ???
+  def dropQuery: Parser[N] = ???
+  def block: Parser[N] =
+    def written = rep1sep(query, ";") ^^ {
+      case Nil      => Block(Nil)
+      case h +: Nil => h
+      case l        => Block(l)
+    }
+    embedded.block | written
+  def tuple(of: => Parser[N]): Parser[N] =
+    embedded.tuple | rep1sep(of, ",".r) ^^ { r => Tuple(r) }
+
+  def star: Parser[N] = embedded.star | kw.star ^^ { _ => Star() }
+
+  def aliased(required: Boolean)(
+      of: => Parser[N]
+  ): Parser[N] =
+    val alias = kw.as.? ~> ident
+    required match
+      case false =>
+        of ~ alias.? ^^ {
+          case o ~ Some(i) => As(o, i)
+          case o ~ _       => o
+        }
+      case true => of ~ alias ^^ { case o ~ i => As(o, i) }
+
+  def sql: Parser[N] = block | query | expr
+  def query: Parser[N] =
+    selectQuery // | updateQuery | deleteQuery | insertQuery | createQuery | dropQuery
+  def subquery: Parser[N] = parens(false)(
+    embedded.selectQuery
+  ) | parens(true)(selectQuery)
 
   object expr extends Parser[N]:
     def not: Parser[N => N] = kw.not ^^ { case _ =>
@@ -628,26 +673,33 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       fs.foldLeft(a)((c, i) => i(c))
     }
     def prec10: Parser[N] =
-      customFunction | embedded.literal | written.ref | exists | subquery | written
-        .parens(true)(
-          expr
-        )
+      customFunction | embedded.literal | ref | exists | subquery | parens(
+        true
+      )(expr)
 
-    /** Operator precedence as specified by Scala: (characters not shown below)
-      * / % + - : \= ! < > & ^ \| (all letters, $, _)
-      */
+    /** Operator precedence as specified by Scala: 
+      (characters not shown below)
+      * / %
+      + -
+      :
+      = !
+      < >
+      &
+      ^
+      |
+      (all letters, $, _)
+    */
     def apply(v: Input): ParseResult[N] =
       val prec0 =
         prec1 ~ rep(all | any | nullCheck | and | or | in | like | between) ^^ {
           case a ~ fs => fs.foldLeft(a)((c, i) => i(c))
         }
       prec0(v)
-  end expr
 
   def src: Parser[N] =
-    written.aliased(false)(
+    aliased(false)(
       embedded.table | subquery | embedded.values
-    ) | written.dual
+    ) | dual
 
   def apply(src: String): Try[N] =
     parseAll(sql, src) match
