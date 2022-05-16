@@ -56,7 +56,7 @@ object Symbol:
 
 type Join[L[_], T[_]] = (JoinType, Node[L, T], Node[L, T])
 type Ordered[L[_], T[_]] = (Node[L, T], Order)
-type GroupBy[L[_], T[_]] = (List[Node[L, T]], Option[Node[L, T]])
+type GroupBy[L[_], T[_]] = (Node[L, T], Option[Node[L, T]])
 
 enum Node[L[_], T[_]]:
   node =>
@@ -80,7 +80,7 @@ enum Node[L[_], T[_]]:
   case Dual() extends Node[L, T]
   case As[L[_], T[_]](tree: Node[L, T], alias: String) extends Node[L, T]
   case Ref(name: String) extends Node[L, T]
-  case SelectCol[L[_], T[_]](tree: Node[L, T], column: String)
+  case SelectCol[L[_], T[_]](tree: Node[L, T], selection: Node[L, T])
       extends Node[L, T]
   case FunApp[L[_], T[_], A](
       name: Func,
@@ -129,7 +129,7 @@ enum Node[L[_], T[_]]:
             },
             where.map(_.transform.pre(f)),
             groupBy.map { case (es, h) =>
-              (es.map(_.transform.pre(f)), h.map(_.transform.pre(f)))
+              (es.transform.pre(f), h.map(_.transform.pre(f)))
             },
             orderBy.map { case (t, o) => (t.transform.pre(f), o) },
             offset.map(_.transform.pre(f)),
@@ -143,7 +143,7 @@ enum Node[L[_], T[_]]:
         case Dual()          => node
         case As(t, n)        => As(t.transform.pre(f), n)
         case Ref(_)          => node
-        case SelectCol(t, c) => SelectCol(t.transform.pre(f), c)
+        case SelectCol(t, c) => SelectCol(t.transform.pre(f), c.transform.pre(f))
         case FunApp(n, args, tpe) =>
           FunApp(n, args.map(_.transform.pre(f)), tpe)
         case TypeLit(_)      => node
@@ -182,7 +182,7 @@ enum Node[L[_], T[_]]:
             },
             where.map(_.transform.post(f)),
             groupBy.map { case (es, h) =>
-              (es.map(_.transform.post(f)), h.map(_.transform.post(f)))
+              (es.transform.post(f), h.map(_.transform.post(f)))
             },
             orderBy.map { case (t, o) => (t.transform.post(f), o) },
             offset.map(_.transform.post(f)),
@@ -196,7 +196,7 @@ enum Node[L[_], T[_]]:
         case Dual()          => node
         case As(t, n)        => As(t.transform.post(f), n)
         case Ref(_)          => node
-        case SelectCol(t, c) => SelectCol(t.transform.post(f), c)
+        case SelectCol(t, c) => SelectCol(t.transform.post(f), c.transform.pre(f))
         case FunApp(n, args, tpe) =>
           FunApp(n, args.map(_.transform.post(f)), tpe)
         case TypeLit(_)      => node
@@ -242,7 +242,7 @@ enum Node[L[_], T[_]]:
             },
             where.map(_.transform.both(fl, ft)),
             groupBy.map { case (e, h) =>
-              (e.map(_.transform.both(fl, ft)), h.map(_.transform.both(fl, ft)))
+              (e.transform.both(fl, ft), h.map(_.transform.both(fl, ft)))
             },
             orderBy.map { case (t, o) => (t.transform.both(fl, ft), o) },
             offset.map(_.transform.both(fl, ft)),
@@ -256,7 +256,7 @@ enum Node[L[_], T[_]]:
         case Dual()          => Dual()
         case As(t, n)        => As(t.transform.both(fl, ft), n)
         case Ref(n)          => Ref(n)
-        case SelectCol(t, c) => SelectCol(t.transform.both(fl, ft), c)
+        case SelectCol(t, c) => SelectCol(t.transform.both(fl, ft), c.transform.both(fl, ft))
         case FunApp(n, args, tpe) =>
           FunApp(
             n,
@@ -303,78 +303,8 @@ object Node:
 class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   private type N = Node[L, T]
   import Node.*
-  object kw:
-    val registry: Map[String, Regex] = Map(
-      "select" -> """(?i)select""".r,
-      "distinct" -> """(?i)distinct""".r,
-      "from" -> """(?i)from""".r,
-      "as" -> """(?i)as""".r,
-      "dual" -> """(?i)dual""".r,
-      "star" -> """\*""".r,
-      "not" -> """(?i)not""".r,
-      "all" -> """(?i)all""".r,
-      "any" -> """(?i)any""".r,
-      "some" -> """(?i)some""".r,
-      "is" -> """(?i)is""".r,
-      "null" -> """(?i)null""".r,
-      "exists" -> """(?i)exists""".r,
-      "and" -> """(?i)and""".r,
-      "or" -> """(?i)or""".r,
-      "in" -> """(?i)in""".r,
-      "like" -> """(?i)like""".r,
-      "between" -> """(?i)between""".r,
-      "where" -> """(?i)where""".r,
-      "by" -> """(?i)by""".r,
-      "group" -> """(?i)group""".r,
-      "order" -> """(?i)order""".r,
-      "offset" -> """(?i)offset""".r,
-      "limit" -> """(?i)limit""".r,
-      "join" -> """(?i)join""".r,
-      "inner" -> """(?i)inner""".r,
-      "left" -> """(?i)left""".r,
-      "right" -> """(?i)right""".r,
-      "full" -> """(?i)full""".r,
-      "cross" -> """(?i)cross""".r,
-      "on" -> """(?i)on""".r,
-      "having" -> """(?i)having""".r,
-      "asc" -> """(?i)asc""".r,
-      "desc" -> """(?i)desc""".r
-    )
-    def select = registry("select")
-    def distinct = registry("distinct")
-    def from = registry("from")
-    def as = registry("as")
-    def dual = registry("dual")
-    def star = registry("star")
-    def not = registry("not")
-    def all = registry("all")
-    def any = registry("any")
-    def some = registry("some")
-    def is = registry("is")
-    def `null` = registry("null")
-    def exists = registry("exists")
-    def and = registry("and")
-    def or = registry("or")
-    def in = registry("in")
-    def like = registry("like")
-    def between = registry("between")
-    def where = registry("where")
-    def by = registry("by")
-    def group = registry("group")
-    def order = registry("order")
-    def offset = registry("offset")
-    def limit = registry("limit")
-    def join = registry("join")
-    def inner = registry("inner")
-    def left = registry("left")
-    def right = registry("right")
-    def full = registry("full")
-    def cross = registry("cross")
-    def on = registry("on")
-    def having = registry("having")
-    def asc = registry("asc")
-    def desc = registry("desc")
-
+  import SQLParser.*
+            
   object operand:
     def - : Parser[Func] = "-" ^^ { _ => Func.BuiltIn(Symbol.Minus) }
     def + : Parser[Func] = "+" ^^ { _ => Func.BuiltIn(Symbol.Plus) }
@@ -451,6 +381,16 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       "Star"
     )
 
+    def selectCol: Parser[N] = apply(
+      { case t: SelectCol[_, _] => t },
+      "SelectCol"
+    )   
+
+    def column: Parser[N] = apply(
+      { case t: Column[_, _] => t },
+      "Column"
+    )   
+
   object selectQuery extends Parser[N]:
     def join: Parser[Join[L, T]] =
       def inner = kw.inner ~> kw.join ^^ { case _ => JoinType.Inner }
@@ -462,12 +402,12 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
         case jt ~ s ~ e => (jt, s, e)
       }
     def where: Parser[N] = kw.where ~> expr
-    def groupBy: Parser[GroupBy[L,T]] = kw.group ~> kw.by ~> tuple(expr) ~ (kw.having ~> expr).? ^^ {case Tuple(es) ~ h => (es, h)}
+    def groupBy: Parser[GroupBy[L,T]] = kw.group ~> kw.by ~> tuple(expr) ~ (kw.having ~> expr).? ^^ {case es ~ h => (es, h)}
     def orderBy: Parser[List[Ordered[L,T]]] = 
       val asc = kw.asc ^^ {_ => Order.Asc}
       val desc = kw.desc ^^ {_ => Order.Desc}
       val ord = (asc | desc).? ^^ (_.getOrElse(Order.Asc))
-      kw.order ~> kw.by ~> rep1sep(expr ~ ord, ",".r) ^^ {es =>
+      kw.order ~> kw.by ~> rep1sep(expr ~ ord, kw.`,`) ^^ {es =>
         es.map{case e ~ o => (e, o)}
       }
     def offset: Parser[N] = kw.offset ~> expr
@@ -477,8 +417,15 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
     def apply(v: Input): ParseResult[N] =
       def written =
-        (kw.select ~> kw.distinct.?) ~ selectColumns ~ (kw.from ~> src) ~ rep(join) ~ where.? ~ groupBy.? ~ orderBy.? ~ limit.? ~ offset.? ^^ {
-          case distinct ~ colset ~ from ~ joins ~ where ~ groupBy ~ orderBy ~ limit ~ offset =>
+        def comutativeOL = 
+          def lim = limit >> {l => success(Some(l)) ~ success(Option.empty[N])}
+          def off = offset >> {o => success(Option.empty[N]) ~ success(Some(o))}
+          def lo = limit ~ offset >> {case l ~ o => success(Some(l)) ~ success(Some(o)) }
+          def ol = offset ~ limit >> {case o ~ l => success(Some(l)) ~ success(Some(o)) }
+          def none = success(None) ~ success(None)
+          lo | ol | lim | off | none
+        kw.select ~> kw.distinct.? ~ selectColumns ~ (kw.from ~> src) ~ rep(join) ~ where.? ~ groupBy.? ~ orderBy.? ~ comutativeOL ^^ {
+          case distinct ~ colset ~ from ~ joins ~ where ~ groupBy ~ orderBy ~ (limit ~ offset) =>
             Select(
               distinct.isDefined,
               colset,
@@ -492,6 +439,10 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
             )
         }
       (embedded.selectQuery | written)(v)
+  def src: Parser[N] =
+    aliased(false)(
+      embedded.table | subquery | embedded.values
+    ) | dual    
   def parens(required: Boolean)(without: => Parser[N]): Parser[N] =
     val `with` = "(" ~> parens(false)(without) <~ ")"
     if required then `with` else `with` | without
@@ -507,14 +458,14 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   def createQuery: Parser[N] = ???
   def dropQuery: Parser[N] = ???
   def block: Parser[N] =
-    def written = rep1sep(query, ";") ^^ {
+    def written = rep1sep(query, kw.`;`) ^^ {
       case Nil      => Block(Nil)
       case h +: Nil => h
       case l        => Block(l)
     }
     embedded.block | written
   def tuple(of: => Parser[N]): Parser[N] =
-    embedded.tuple | rep1sep(of, ",".r) ^^ { r => Tuple(r) }
+    embedded.tuple | rep1sep(of, kw.`,`) ^^ { r => Tuple(r) }
 
   def star: Parser[N] = embedded.star | kw.star ^^ { _ => Star() }
 
@@ -558,15 +509,18 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     def exists: Parser[N] = kw.exists ~> subquery ^^ { case n =>
       FunApp(Func.BuiltIn(Symbol.Exists), List(n), None)
     }
+    def column: Parser[N] = 
+      def written = """[a-zA-Z][a-zA-Z0-9_]*""".r ^^ { name => 
+        Column[L,T](name)  
+      }
+      written | embedded.column
+    def selectCol: Parser[N] = 
+      def written = ident ~ (kw.`.` ~> (column | star)) ^^ {case id ~ c => 
+          SelectCol[L,T](Ref(id),c)  
+        }
+      written | embedded.selectCol
     def customFunction: Parser[N] =
-      val pat = """([a-zA-Z][a-zA-Z0-9_]*)\(""".r
-      pat ~ repsep(expr, ",".r) <~ """\)""".r ^? ({
-        case pat(name) ~ args
-            if !kw.registry.values.exists(r => r.matches(name)) =>
-          (name, args)
-      }, { case pat(name) ~ _ =>
-        s"Keyword \"${name}\" cannot be used as function name"
-      }) ^^ { case (name, args) =>
+      ident ~ ("(" ~> repsep(expr, kw.`,`) <~ ")") ^^ { case name ~ args =>
         FunApp(Func.Custom(name), args, None)
       }
     def and: Parser[N => N] = (kw.and ~> prec1) ^^ { case r =>
@@ -673,7 +627,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       fs.foldLeft(a)((c, i) => i(c))
     }
     def prec10: Parser[N] =
-      customFunction | embedded.literal | ref | exists | subquery | parens(
+      customFunction | selectCol | embedded.literal | ref | exists | subquery | parens(
         true
       )(expr)
 
@@ -696,13 +650,90 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
         }
       prec0(v)
 
-  def src: Parser[N] =
-    aliased(false)(
-      embedded.table | subquery | embedded.values
-    ) | dual
-
   def apply(src: String): Try[N] =
     parseAll(sql, src) match
       case Success(tree, _) => scala.util.Success(tree)
       case Error(msg, i)    => scala.util.Failure(GraceException(msg))
       case Failure(msg, i)  => scala.util.Failure(GraceException(msg))
+
+object SQLParser:
+  object kw:
+    val registry: Map[String, Regex] = Map(
+      "select" -> """(?i)select""".r,
+      "distinct" -> """(?i)distinct""".r,
+      "from" -> """(?i)from""".r,
+      "as" -> """(?i)as""".r,
+      "dual" -> """(?i)dual""".r,
+      "star" -> """\*""".r,
+      "not" -> """(?i)not""".r,
+      "all" -> """(?i)all""".r,
+      "any" -> """(?i)any""".r,
+      "some" -> """(?i)some""".r,
+      "is" -> """(?i)is""".r,
+      "null" -> """(?i)null""".r,
+      "exists" -> """(?i)exists""".r,
+      "and" -> """(?i)and""".r,
+      "or" -> """(?i)or""".r,
+      "in" -> """(?i)in""".r,
+      "like" -> """(?i)like""".r,
+      "between" -> """(?i)between""".r,
+      "where" -> """(?i)where""".r,
+      "by" -> """(?i)by""".r,
+      "group" -> """(?i)group""".r,
+      "order" -> """(?i)order""".r,
+      "offset" -> """(?i)offset""".r,
+      "limit" -> """(?i)limit""".r,
+      "join" -> """(?i)join""".r,
+      "inner" -> """(?i)inner""".r,
+      "left" -> """(?i)left""".r,
+      "right" -> """(?i)right""".r,
+      "full" -> """(?i)full""".r,
+      "cross" -> """(?i)cross""".r,
+      "on" -> """(?i)on""".r,
+      "having" -> """(?i)having""".r,
+      "asc" -> """(?i)asc""".r,
+      "desc" -> """(?i)desc""".r,
+      "," -> """\,""".r,
+      "." -> """\.""".r,
+      ";" -> """\;""".r,
+      //unused, but reserved
+      "true" -> """(?i)true""".r,
+      "false" -> """(?i)false""".r,      
+    )
+    def select = registry("select")
+    def distinct = registry("distinct")
+    def from = registry("from")
+    def as = registry("as")
+    def dual = registry("dual")
+    def star = registry("star")
+    def not = registry("not")
+    def all = registry("all")
+    def any = registry("any")
+    def some = registry("some")
+    def is = registry("is")
+    def `null` = registry("null")
+    def exists = registry("exists")
+    def and = registry("and")
+    def or = registry("or")
+    def in = registry("in")
+    def like = registry("like")
+    def between = registry("between")
+    def where = registry("where")
+    def by = registry("by")
+    def group = registry("group")
+    def order = registry("order")
+    def offset = registry("offset")
+    def limit = registry("limit")
+    def join = registry("join")
+    def inner = registry("inner")
+    def left = registry("left")
+    def right = registry("right")
+    def full = registry("full")
+    def cross = registry("cross")
+    def on = registry("on")
+    def having = registry("having")
+    def asc = registry("asc")
+    def desc = registry("desc")
+    def `,` = registry(",")
+    def `.` = registry(".")
+    def `;` = registry(";")        

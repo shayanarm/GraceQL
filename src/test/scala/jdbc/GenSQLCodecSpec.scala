@@ -30,9 +30,9 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   Using raw SQL, the JDBC context
   """ should "parse a select query from a single table" in {
     parseAssert {
-      native"SELECT * FROM ${users.lift} AS u".unlift
+      native"SELECT u.* FROM ${users.lift} AS u".unlift
     } {
-      "SELECT * FROM users AS u"
+      "SELECT u.* FROM users AS u"
     }
   }
 
@@ -181,5 +181,63 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     //   "as(1)"
     // }
     // """ shouldNot compile
+  }
+
+  it should "parse a select statement with WHERE clause" in {
+    parseAssert {
+      native"select * from ${users.lift} u where ${true.lift}".unlift
+    } {
+      "SELECT * FROM users AS u WHERE true"
+    }
+  }
+
+  it should "parse a select statement with JOIN clause" in {
+    parseAssert {
+      native"select u1 . *, u2.* from ${users.lift} u1 cross join ${users.lift} u2 on u1.id = u2.id".unlift
+    } {
+      "SELECT u1.*, u2.* FROM users AS u1 CROSS JOIN users AS u2 ON u1.id = u2.id"
+    }
+  }
+
+  it should "parse a select statement with ORDER BY clause" in {
+    parseAssert {
+      native"select * from ${users.lift} u order by ${1.lift},${2.lift} desc".unlift
+    } {
+      "SELECT * FROM users AS u ORDER BY 1 ASC, 2 DESC"
+    }
+  }
+
+  it should "parse a select statement with GROUP BY clause" in {
+    parseAssert {
+      native"select * from ${users.lift} u group by u.id,u.name".unlift
+    } {
+      "SELECT * FROM users AS u GROUP BY u.id, u.name"
+    }
+  }
+
+  it should "parse a select statement with LIMIT and/or OFFSET clause" in {
+    parseAssert {
+      native"select * from ${users.lift} u LIMIT ${5.lift}".unlift
+    } {
+      "SELECT * FROM users AS u LIMIT 5"
+    }
+
+    parseAssert {
+      native"select * from ${users.lift} u offset ${5.lift}".unlift
+    } {
+      "SELECT * FROM users AS u OFFSET 5"
+    }
+
+    parseAssert {
+      native"select * from ${users.lift} u limit ${5.lift} offset ${5.lift}".unlift
+    } {
+      "SELECT * FROM users AS u LIMIT 5 OFFSET 5"
+    }
+
+    parseAssert {
+      native"select * from ${users.lift} u offset ${5.lift} limit ${5.lift}".unlift
+    } {
+      "SELECT * FROM users AS u LIMIT 5 OFFSET 5"
+    }
   }
 }

@@ -22,34 +22,57 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
             offset,
             limit
           ) =>
-        val (fromClause, alias, parens) =
-          from match
-            case sub @ As(s: Select[_, _], name) =>
-              (print(s), '{ Some(${ Expr(name) }) }, '{ true })
-            case sub: Select[_, _] => (print(from), '{ None }, '{ true })
-            case i                 => (print(from), '{ None }, '{ false })
-        '{
-          val builder = StringBuilder()
-          builder.append("SELECT ")
-          if ${ Expr(distinct) } then builder.append("DISTINCT ")
-          builder.append(${ print(columns) } + " ")
-          val fr = if $parens then s"(${$fromClause})" else $fromClause
-          builder.append(s"FROM ${fr}")
-          if ${ alias }.isDefined then builder.append(s" AS ${$alias.get}")
-          // s"""
-          // SELECT ${if distinct then "DISTINCT " else ""}${print(columns)}
-          // FROM ${print(from)}
-          // ${joins.map(print).mkString("\n")}
-          // ${where.fold("")(i => s"WHERE ${print(i)}")}
-          // ${groupBy.fold("")(i => s"GROUP BY ${print(i)}")}
-          // """
-          builder.toString
+        val distinctWords = if distinct then List('{ "DISTINCT" }) else Nil
+        val columnsWords = List(print(columns))
+        val fromWords = from match
+          case sub @ As(s: Select[_, _], name) =>
+            List('{ "(" + ${ print(s) } + ")" }, '{ "AS" }, Expr(name))
+          case sub: Select[_, _] =>
+            List('{ "(" + ${ print(from) } + ")" })
+          case i => List(print(i))
+        val joinWords = joins.map {case (jt, src, on) =>
+          val jtStr = jt match
+            case JoinType.Inner => "INNER"
+            case JoinType.Left => "LEFT"
+            case JoinType.Right => "RIGHT"
+            case JoinType.Full => "FULL"
+            case JoinType.Cross => "CROSS"
+          List(Expr(jtStr), Expr("JOIN"), print(src), Expr("ON"), print(on))
+        }.flatten
+        val whereWords = where.fold(Nil)(i => List('{ "WHERE" }, print(i)))
+        val groupByWords = groupBy.fold(List.empty) { case (cs, h) =>
+          List(Expr("GROUP"), Expr("BY"), print(cs)) ++ h.map(print).toList
         }
+        val orderByWords = orderBy match
+          case Nil => Nil
+          case cs =>
+            val ord = cs.map {
+              case (c, Order.Asc)  => '{ ${ print(c) } + " ASC" }
+              case (c, Order.Desc) => '{ ${ print(c) } + " DESC" }
+            }
+            List(
+              Expr("ORDER"),
+              Expr("BY"),
+              '{ ${ Expr.ofSeq(ord) }.mkString(", ") }
+            )
+        val limitWords =
+          limit.fold(List.empty)(l => List(Expr("LIMIT"), print(l)))
+        val offsetWords =
+          offset.fold(List.empty)(o => List(Expr("OFFSET"), print(o)))
+        val words =
+          List('{ "SELECT" }) ++ distinctWords ++ columnsWords ++ List('{
+            "FROM"
+          }) ++ fromWords ++ joinWords ++ whereWords ++ groupByWords ++ orderByWords ++ limitWords ++ offsetWords
+
+        '{ ${ Expr.ofList(words) }.mkString(" ") }
       case Block(stmts) =>
         '{ ${ Expr.ofSeq(stmts.map(print)) }.map(q => s"$q;").mkString(" ") }
       case Star()       => '{ "*" }
       case Tuple(trees) => '{ ${ Expr.ofSeq(trees.map(print)) }.mkString(", ") }
-      case As(tree, name) => '{ ${ print(tree) } + " AS " + ${ Expr(name)} }
+      case As(tree, name) => '{ ${ print(tree) } + " AS " + ${ Expr(name) } }
+      case Ref(name) => Expr(name)
+      case Column(name) => Expr(name)
+      case SelectCol(n, c) => '{${print(n)} + "." + ${print(c)}}
       case Table(name, _) => name
       case Literal(value) =>
         value.asExprOf[scala.Any] match
@@ -64,6 +87,10 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
             case _ => '{ "(" + ${ print(a) } + ")" }
         }
         (func, encodedArgs) match
+          case (Func.BuiltIn(Symbol.Eq), List(l, r)) =>
+            '{ $l + " = " + $r }          
+          case (Func.BuiltIn(Symbol.Neq), List(l, r)) =>
+            '{ $l + " != " + $r }                      
           case (Func.BuiltIn(Symbol.Plus), List(l, r)) =>
             '{ $l + " + " + $r }
           case (Func.BuiltIn(Symbol.Minus), List(l, r)) =>
@@ -71,17 +98,21 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
           case (Func.BuiltIn(Symbol.Plus), List(l)) =>
             l
           case (Func.BuiltIn(Symbol.Minus), List(l)) =>
-            '{ "-" + $l }            
+            '{ "-" + $l }
           case (Func.BuiltIn(Symbol.Mult), List(l, r)) =>
             '{ $l + " * " + $r }
           case (Func.BuiltIn(Symbol.And), List(l, r)) =>
             '{ $l + " AND " + $r }
           case (Func.BuiltIn(Symbol.Or), List(l, r)) =>
-            '{ $l + " OR " + $r }            
+            '{ $l + " OR " + $r }
           case (Func.Custom(name), as) =>
-            '{ ${ Expr(name) } + "(" + ${Expr.ofSeq(as)}.mkString(", ") + ")" }
+            '{
+              ${ Expr(name) } + "(" + ${ Expr.ofSeq(as) }.mkString(", ") + ")"
+            }
 
-  override protected def adaptSupport[S[+X] <: Iterable[X], A](tree: Node[Expr, Type])(using q: Quotes, ts: Type[S], ta: Type[A]): Node[Expr, Type] =
-    tree.transform.pre {
-      case TypeAnn(tree, _) => tree
+  override protected def adaptSupport[S[+X] <: Iterable[X], A](
+      tree: Node[Expr, Type]
+  )(using q: Quotes, ts: Type[S], ta: Type[A]): Node[Expr, Type] =
+    tree.transform.pre { case TypeAnn(tree, _) =>
+      tree
     }
