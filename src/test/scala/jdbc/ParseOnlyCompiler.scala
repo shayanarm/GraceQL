@@ -9,7 +9,7 @@ import scala.annotation.targetName
 
 object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
   import Node.*
-  protected def print(tree: Node[Expr, Type])(using Quotes): Expr[String] =
+  protected def print(tree: Node[Expr, Type])(using q: Quotes): Expr[String] =
     tree match
       case Select(
             distinct,
@@ -82,7 +82,7 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
       case FunApp(func, args, _) =>
         val encodedArgs = args.map { a =>
           a match
-            case Literal(_) | SelectCol(_, _) | FunApp(Func.Custom(_), _, _) =>
+            case Literal(_) | SelectCol(_, _) | FunApp(Func.Custom(_), _, _) | Star() =>
               print(a)
             case _ => '{ "(" + ${ print(a) } + ")" }
         }
@@ -105,10 +105,17 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
             '{ $l + " AND " + $r }
           case (Func.BuiltIn(Symbol.Or), List(l, r)) =>
             '{ $l + " OR " + $r }
+          case (Func.BuiltIn(Symbol.Count), List(arg)) =>
+            '{ "COUNT(" + $arg + ")"}
           case (Func.Custom(name), as) =>
             '{
               ${ Expr(name) } + "(" + ${ Expr.ofSeq(as) }.mkString(", ") + ")"
             }
+      case Cast(n, tpe) => 
+        val typeStr = q.reflect.TypeRepr.of(using tpe).show(using q.reflect.Printer.TypeReprShortCode)
+        '{"CAST(" + ${print(n)} + " AS " + ${Expr(typeStr)} + ")"}     
+      case DropTable(name) => '{"DROP TABLE " + $name}
+      // case CreateTable(name, columns) => '{"CREATE TABLE " + $name + "(" + ")"}
 
   override protected def adaptSupport[S[+X] <: Iterable[X], A](
       tree: Node[Expr, Type]

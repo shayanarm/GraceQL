@@ -17,7 +17,7 @@ import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
 
 class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
-  case class User(name: String)
+  case class User(id: Int, name: String)
   val users: Table[GenSQL, User] = Table[GenSQL, User]("users")
 
   inline def parseAssert[A](
@@ -193,7 +193,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   it should "parse a select statement with JOIN clause" in {
     parseAssert {
-      native"select u1 . *, u2.* from ${users.lift} u1 cross join ${users.lift} u2 on u1.id = u2.id".unlift
+      native"select u1.*, u2.* from ${users.lift} u1 cross join ${users.lift} u2 on u1.id = u2.id".unlift
     } {
       "SELECT u1.*, u2.* FROM users AS u1 CROSS JOIN users AS u2 ON u1.id = u2.id"
     }
@@ -240,4 +240,39 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
       "SELECT * FROM users AS u LIMIT 5 OFFSET 5"
     }
   }
+
+  it should "parse a select statement with an aggregate function call" in {
+    parseAssert {
+      native"select count(*) from ${users.lift}".unlift
+    } {
+      "SELECT COUNT(*) FROM users"
+    }
+  }
+
+  it should "parse a cast expression" in {
+    parseAssert {
+      native"cast(${1.lift} as ${classOf[String].lift})".unlift
+    } {
+      "CAST(1 AS String)"
+    }
+  }
+
+  it should "parse a DROP TABLE statement" in {
+    parseAssert {
+      native"drop table ${users.lift}".unlift
+    } {
+      "DROP TABLE users"
+    }
+  }
+
+  // it should "parse a CREATE TABLE statement" in {
+  //   parseAssert {
+  //     native"""create table ${users.lift} (
+  //         id ${classOf[Int].lift} primary key auto_increment,
+  //         name ${classOf[String].lift} not null
+  //       )""".unlift
+  //   } {
+  //     "DROP TABLE users"
+  //   }
+  // }
 }

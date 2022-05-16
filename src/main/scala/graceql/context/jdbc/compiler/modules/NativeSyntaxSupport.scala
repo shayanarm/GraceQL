@@ -55,6 +55,7 @@ object NativeSyntaxSupport extends CompileModule:
         Node.Ref(ctx.refMap(i.asTerm))
       case '{ $a: t } if ctx.literalEncodable(a) =>
         a match
+          case '{$c: Class[t]} => Node.TypeLit(Type.of[t])
           case '{ $v: graceql.context.jdbc.Table[V, a] } =>
             Node.Table[Expr, Type, a]('{ $v.name }, Type.of[a])
           case _ =>

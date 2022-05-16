@@ -7,6 +7,7 @@ import scala.concurrent.ExecutionContext
 import scala.compiletime.summonInline
 import scala.concurrent.Promise
 import scala.util.Try
+import scala.Conversion
 
 class GraceException(val message: Option[String] = None, val cause: Option[Throwable] = None)
     extends Exception(message.orNull, cause.orNull):
@@ -49,7 +50,7 @@ trait Capabilities[N[+_]]:
     def native(s: N[Any]*): N[Any]
   
   extension[A](a: A)
-    def lift: N[A]    
+    def lift: N[A]   
     inline def |>[B](f: A => B) = f(a)
 
 trait Context[R[_]]:

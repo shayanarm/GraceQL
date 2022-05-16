@@ -50,9 +50,14 @@ enum Symbol:
   case Like extends Symbol // LIKE
   // ternary
   case Between extends Symbol // BETWEEN
+  // aggregate
+  case Count extends Symbol //COUNT
+  case Sum extends Symbol //SUM
+  case Min extends Symbol //MIN
+  case Max extends Symbol //MAX
+  case Avg extends Symbol //AVG
+  case First extends Symbol //FIRST
 
-object Symbol:
-  Symbol.values
 
 type Join[L[_], T[_]] = (JoinType, Node[L, T], Node[L, T])
 type Ordered[L[_], T[_]] = (Node[L, T], Order)
@@ -103,6 +108,7 @@ enum Node[L[_], T[_]]:
   ) extends Node[L, T]
   case Union[L[_], T[_]](left: Node[L, T], right: Node[L, T]) extends Node[L, T]
   case Block[L[_], T[_]](stmts: List[Node[L, T]]) extends Node[L, T]
+  case DropTable[L[_], T[_]](tableName: L[String]) extends Node[L, T]
 
   object transform:
     def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
@@ -157,6 +163,7 @@ enum Node[L[_], T[_]]:
         case Union(l, r) =>
           Union(l.transform.pre(f), r.transform.pre(f))
         case Block(stmts) => Block(stmts.map(_.transform.pre(f)))
+        case DropTable(_) => node
 
     def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
       val g = f.orElse { case t => t }
@@ -210,6 +217,7 @@ enum Node[L[_], T[_]]:
         case Union(l, r) =>
           Union(l.transform.post(f), r.transform.post(f))
         case Block(stmts) => Block(stmts.map(_.transform.post(f)))
+        case DropTable(_) => node
       g(n)
 
     inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] =
@@ -285,6 +293,7 @@ enum Node[L[_], T[_]]:
             r.transform.both(fl, ft)
           )
         case Block(stmts) => Block(stmts.map(_.transform.both(fl, ft)))
+        case DropTable(n) => DropTable(fl(n))
 
 object Node:
   inline def parse[L[_], T[_]](sc: StringContext)(
@@ -391,6 +400,11 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       "Column"
     )   
 
+    def typeLit: Parser[N] = apply(
+      { case t: TypeLit[_, _, _] => t },
+      "TypeLit"
+    )   
+
   object selectQuery extends Parser[N]:
     def join: Parser[Join[L, T]] =
       def inner = kw.inner ~> kw.join ^^ { case _ => JoinType.Inner }
@@ -456,7 +470,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   def deleteQuery: Parser[N] = ???
   def insertQuery: Parser[N] = ???
   def createQuery: Parser[N] = ???
-  def dropQuery: Parser[N] = ???
+  def dropQuery: Parser[N] = kw.drop ~> kw.table ~> embedded.table ^^ {case Table(n,_) => DropTable(n)}
   def block: Parser[N] =
     def written = rep1sep(query, kw.`;`) ^^ {
       case Nil      => Block(Nil)
@@ -483,7 +497,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
   def sql: Parser[N] = block | query | expr
   def query: Parser[N] =
-    selectQuery // | updateQuery | deleteQuery | insertQuery | createQuery | dropQuery
+    selectQuery | dropQuery // | updateQuery | deleteQuery | insertQuery | createQuery
   def subquery: Parser[N] = parens(false)(
     embedded.selectQuery
   ) | parens(true)(selectQuery)
@@ -522,7 +536,18 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     def customFunction: Parser[N] =
       ident ~ ("(" ~> repsep(expr, kw.`,`) <~ ")") ^^ { case name ~ args =>
         FunApp(Func.Custom(name), args, None)
+      } 
+    def aggregateFunction: Parser[N] =
+      def count = kw.count map (_ => Symbol.Count)
+      def sum = kw.sum map (_ => Symbol.Sum)
+      def min = kw.min map (_ => Symbol.Min)
+      def max = kw.max map (_ => Symbol.Max)
+      def avg = kw.avg map (_ => Symbol.Avg)
+      def first = kw.first map (_ => Symbol.First)
+      (count | sum | min | max | avg | first) ~ ("(" ~> (expr | star) <~ ")") ^^ { case symb ~ arg =>
+        FunApp(Func.BuiltIn(symb), List(arg), None)
       }
+    def cast: Parser[N] = kw.cast ~> "(" ~> expr ~ (kw.as ~> embedded.typeLit) <~ ")" ^^ {case n ~ TypeLit(tpe) => Cast(n,tpe)}
     def and: Parser[N => N] = (kw.and ~> prec1) ^^ { case r =>
       l => FunApp(Func.BuiltIn(Symbol.And), List(l, r), None)
     }
@@ -627,7 +652,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       fs.foldLeft(a)((c, i) => i(c))
     }
     def prec10: Parser[N] =
-      customFunction | selectCol | embedded.literal | ref | exists | subquery | parens(
+      cast | aggregateFunction | customFunction | selectCol | embedded.literal | ref | exists | subquery | parens(
         true
       )(expr)
 
@@ -659,6 +684,8 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 object SQLParser:
   object kw:
     val registry: Map[String, Regex] = Map(
+      "drop" -> """(?i)drop""".r,
+      "table" -> """(?i)table""".r,
       "select" -> """(?i)select""".r,
       "distinct" -> """(?i)distinct""".r,
       "from" -> """(?i)from""".r,
@@ -696,10 +723,19 @@ object SQLParser:
       "," -> """\,""".r,
       "." -> """\.""".r,
       ";" -> """\;""".r,
+      "count" -> """(?i)count""".r,
+      "sum" -> """(?i)sum""".r,
+      "min" -> """(?i)min""".r,
+      "max" -> """(?i)max""".r,
+      "avg" -> """(?i)avg""".r,
+      "first" -> """(?i)first""".r,
+      "cast" -> """(?i)cast""".r,
       //unused, but reserved
       "true" -> """(?i)true""".r,
       "false" -> """(?i)false""".r,      
     )
+    def drop = registry("drop")
+    def table = registry("table")
     def select = registry("select")
     def distinct = registry("distinct")
     def from = registry("from")
@@ -737,3 +773,10 @@ object SQLParser:
     def `,` = registry(",")
     def `.` = registry(".")
     def `;` = registry(";")        
+    def count = registry("count")        
+    def sum = registry("sum")        
+    def min = registry("min")        
+    def max = registry("max")        
+    def avg = registry("avg")
+    def first = registry("first")
+    def cast = registry("cast")
