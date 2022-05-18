@@ -18,7 +18,9 @@ import java.util.concurrent.TimeUnit
 
 class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   case class User(id: Int, name: String)
+  case class Post(id: Int, userId: Int)
   val users: Table[GenSQL, User] = Table[GenSQL, User]("users")
+  val posts: Table[GenSQL, Post] = Table[GenSQL, Post]("posts")
 
   inline def parseAssert[A](
       inline src: Queryable[[x] =>> Table[GenSQL, x], Iterable, DBIO] ?=> A
@@ -265,14 +267,17 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  // it should "parse a CREATE TABLE statement" in {
-  //   parseAssert {
-  //     native"""create table ${users.lift} (
-  //         id ${classOf[Int].lift} primary key auto_increment,
-  //         name ${classOf[String].lift} not null
-  //       )""".unlift
-  //   } {
-  //     "DROP TABLE users"
-  //   }
-  // }
+  it should "parse a CREATE TABLE statement" in {
+    parseAssert {
+      native"""create table ${posts.lift} (
+          id ${classOf[Int].lift} auto_increment default ${0.lift},
+          userId ${classOf[Int].lift} not null,
+          primary key (id),
+          foreign key (userId) references ${users.lift}(id) on delete cascade,
+          index (id asc, userId desc)
+        )""".unlift
+    } {
+      "CREATE TABLE posts (id Int AUTO_INCREMENT DEFAULT 0, userId Int NOT NULL, PRIMARY KEY (id), FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE, INDEX (id ASC, userId DESC))"
+    }
+  }
 }

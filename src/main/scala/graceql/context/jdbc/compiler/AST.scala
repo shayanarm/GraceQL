@@ -63,6 +63,24 @@ type Join[L[_], T[_]] = (JoinType, Node[L, T], Node[L, T])
 type Ordered[L[_], T[_]] = (Node[L, T], Order)
 type GroupBy[L[_], T[_]] = (Node[L, T], Option[Node[L, T]])
 
+enum CreateSpec[L[_],T[_]]:
+  case ColDef[L[_], T[_], A](name: String, tpe: T[A], modifiers: List[ColMod[L]]) extends CreateSpec[L,T]
+  case PK[L[_], T[_]](columns: List[String]) extends CreateSpec[L,T]
+  case FK[L[_], T[_]](localCol: String, remoteTableName: L[String], remoteColName: String, onDelete: OnDelete) extends CreateSpec[L,T]
+  case Index[L[_], T[_]](indices: List[(String, Order)]) extends CreateSpec[L,T]
+
+enum ColMod[L[_]]:
+  case NotNull[L[_]]() extends ColMod[L]
+  case AutoInc[L[_]]() extends ColMod[L]
+  case Default[L[_], A](value: L[A]) extends ColMod[L]
+
+enum OnDelete:
+  case Cascade extends OnDelete
+  case SetDefault extends OnDelete
+  case SetNull extends OnDelete
+  case Restrict extends OnDelete
+
+
 enum Node[L[_], T[_]]:
   node =>
   case Literal[L[_], T[_], A](value: L[A]) extends Node[L, T]
@@ -109,6 +127,7 @@ enum Node[L[_], T[_]]:
   case Union[L[_], T[_]](left: Node[L, T], right: Node[L, T]) extends Node[L, T]
   case Block[L[_], T[_]](stmts: List[Node[L, T]]) extends Node[L, T]
   case DropTable[L[_], T[_]](tableName: L[String]) extends Node[L, T]
+  case CreateTable[L[_], T[_]](tableName: L[String], specs: List[CreateSpec[L,T]]) extends Node[L, T]
 
   object transform:
     def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
@@ -164,6 +183,7 @@ enum Node[L[_], T[_]]:
           Union(l.transform.pre(f), r.transform.pre(f))
         case Block(stmts) => Block(stmts.map(_.transform.pre(f)))
         case DropTable(_) => node
+        case CreateTable(_, _) => node
 
     def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
       val g = f.orElse { case t => t }
@@ -218,6 +238,7 @@ enum Node[L[_], T[_]]:
           Union(l.transform.post(f), r.transform.post(f))
         case Block(stmts) => Block(stmts.map(_.transform.post(f)))
         case DropTable(_) => node
+        case CreateTable(_, _) => node
       g(n)
 
     inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] =
@@ -294,6 +315,17 @@ enum Node[L[_], T[_]]:
           )
         case Block(stmts) => Block(stmts.map(_.transform.both(fl, ft)))
         case DropTable(n) => DropTable(fl(n))
+        case CreateTable(n,specs) => CreateTable(fl(n), specs.map {
+          case CreateSpec.ColDef(name, tpe, mods) =>
+            CreateSpec.ColDef(name, ft(tpe), mods.map{
+              case ColMod.NotNull() => ColMod.NotNull()
+              case ColMod.AutoInc() => ColMod.AutoInc()
+              case ColMod.Default(v) => ColMod.Default(fl(v))
+            })            
+          case CreateSpec.PK(ks) => CreateSpec.PK(ks)
+          case CreateSpec.FK(l, tname, r, od) => CreateSpec.FK(l, fl(tname), r, od)
+          case CreateSpec.Index(is) => CreateSpec.Index(is)
+        })
 
 object Node:
   inline def parse[L[_], T[_]](sc: StringContext)(
@@ -418,9 +450,6 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     def where: Parser[N] = kw.where ~> expr
     def groupBy: Parser[GroupBy[L,T]] = kw.group ~> kw.by ~> tuple(expr) ~ (kw.having ~> expr).? ^^ {case es ~ h => (es, h)}
     def orderBy: Parser[List[Ordered[L,T]]] = 
-      val asc = kw.asc ^^ {_ => Order.Asc}
-      val desc = kw.desc ^^ {_ => Order.Desc}
-      val ord = (asc | desc).? ^^ (_.getOrElse(Order.Asc))
       kw.order ~> kw.by ~> rep1sep(expr ~ ord, kw.`,`) ^^ {es =>
         es.map{case e ~ o => (e, o)}
       }
@@ -457,7 +486,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     aliased(false)(
       embedded.table | subquery | embedded.values
     ) | dual    
-  def parens(required: Boolean)(without: => Parser[N]): Parser[N] =
+  def parens[A](required: Boolean)(without: => Parser[A]): Parser[A] =
     val `with` = "(" ~> parens(false)(without) <~ ")"
     if required then `with` else `with` | without
   def dual: Parser[N] = embedded.dual | kw.dual ^^ { _ => Dual() }
@@ -466,10 +495,44 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   }, t => s"Keyword \"${t}\" cannot be used as identifier")
   def ref: Parser[N] =
     embedded.ref | ident ^^ { r => Ref(r) }
+  def ord: Parser[Order] = 
+    def asc = kw.asc ^^ {_ => Order.Asc}
+    def desc = kw.desc ^^ {_ => Order.Desc}    
+    (asc | desc).? ^^ (_.getOrElse(Order.Asc))    
   def updateQuery: Parser[N] = ???
   def deleteQuery: Parser[N] = ???
   def insertQuery: Parser[N] = ???
-  def createQuery: Parser[N] = ???
+
+  object createQuery extends Parser[N]:
+    def columnDef: Parser[CreateSpec[L,T]] = 
+      expr.column ~ embedded.typeLit ~ rep(columnModifier) ^^ {case Column(c) ~ TypeLit(tpe) ~ ms => CreateSpec.ColDef(c, tpe, ms)}
+    def fk: Parser[CreateSpec[L,T]] = 
+      def onDel: Parser[OnDelete] = 
+        def cascade = kw.cascade ^^ {_ => OnDelete.Cascade}
+        def setNull = kw.set ~ kw.`null` ^^ {_ => OnDelete.SetNull}
+        def setDefault = kw.set ~ kw.default ^^ {_ => OnDelete.SetDefault}
+        def restrict = kw.restrict ^^ {_ => OnDelete.Restrict}
+        cascade | setNull | setDefault | restrict
+      kw.foreign ~> kw.key ~> parens(true)(expr.column) ~ (kw.references ~> embedded.table ~ parens(true)(expr.column)) ~ (kw.on ~> kw.delete ~> onDel).? ^^ { case Column(l) ~ (Table(n, _) ~ Column(r)) ~ od =>
+        CreateSpec.FK(l, n, r, od.getOrElse(OnDelete.Restrict))
+      }
+    def pk: Parser[CreateSpec[L,T]] = 
+      kw.primary ~> kw.key ~> parens(true)(rep1sep(expr.column, kw.`,`)) ^^ {cs => CreateSpec.PK(cs.map{case Column(str) => str})}
+    def index: Parser[CreateSpec[L,T]] = kw.index ~> parens(true)(rep1sep(expr.column ~ ord, kw.`,`)) ^^ {is => 
+      CreateSpec.Index(is.map{case Column(c) ~ o => (c, o)})
+    }
+
+    def columnModifier: Parser[ColMod[L]] = 
+      def autoInc: Parser[ColMod[L]] = kw.auto_increment ^^ {_ => ColMod.AutoInc()}
+      def notNull: Parser[ColMod[L]] = kw.not ~> kw.`null` ^^ {_ => ColMod.NotNull()}
+      def default: Parser[ColMod[L]] = kw.default ~> embedded.literal ^^ {case Literal(l) => ColMod.Default(l)}
+      autoInc | notNull | default
+
+    def columnSpec: Parser[CreateSpec[L,T]] = fk | pk | index | columnDef
+    def apply(v: Input): ParseResult[N] =
+      def parser = kw.create ~> kw.table ~> embedded.table ~ parens(true)(rep1sep(columnSpec, kw.`,`)) ^^ {case Table(n,_) ~ specs => CreateTable(n,specs)}
+      parser(v)
+
   def dropQuery: Parser[N] = kw.drop ~> kw.table ~> embedded.table ^^ {case Table(n,_) => DropTable(n)}
   def block: Parser[N] =
     def written = rep1sep(query, kw.`;`) ^^ {
@@ -497,7 +560,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
   def sql: Parser[N] = block | query | expr
   def query: Parser[N] =
-    selectQuery | dropQuery // | updateQuery | deleteQuery | insertQuery | createQuery
+    createQuery| dropQuery | selectQuery // | updateQuery | deleteQuery | insertQuery
   def subquery: Parser[N] = parens(false)(
     embedded.selectQuery
   ) | parens(true)(selectQuery)
@@ -534,7 +597,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
         }
       written | embedded.selectCol
     def customFunction: Parser[N] =
-      ident ~ ("(" ~> repsep(expr, kw.`,`) <~ ")") ^^ { case name ~ args =>
+      ident ~ parens(true)(repsep(expr, kw.`,`)) ^^ { case name ~ args =>
         FunApp(Func.Custom(name), args, None)
       } 
     def aggregateFunction: Parser[N] =
@@ -544,10 +607,10 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       def max = kw.max map (_ => Symbol.Max)
       def avg = kw.avg map (_ => Symbol.Avg)
       def first = kw.first map (_ => Symbol.First)
-      (count | sum | min | max | avg | first) ~ ("(" ~> (expr | star) <~ ")") ^^ { case symb ~ arg =>
+      (count | sum | min | max | avg | first) ~ parens(true)(expr | star) ^^ { case symb ~ arg =>
         FunApp(Func.BuiltIn(symb), List(arg), None)
       }
-    def cast: Parser[N] = kw.cast ~> "(" ~> expr ~ (kw.as ~> embedded.typeLit) <~ ")" ^^ {case n ~ TypeLit(tpe) => Cast(n,tpe)}
+    def cast: Parser[N] = kw.cast ~> parens(true)(expr ~ (kw.as ~> embedded.typeLit)) ^^ {case n ~ TypeLit(tpe) => Cast(n,tpe)}
     def and: Parser[N => N] = (kw.and ~> prec1) ^^ { case r =>
       l => FunApp(Func.BuiltIn(Symbol.And), List(l, r), None)
     }
@@ -685,7 +748,19 @@ object SQLParser:
   object kw:
     val registry: Map[String, Regex] = Map(
       "drop" -> """(?i)drop""".r,
+      "delete" -> """(?i)delete""".r,
+      "create" -> """(?i)create""".r,
       "table" -> """(?i)table""".r,
+      "key" -> """(?i)key""".r,
+      "primary" -> """(?i)primary""".r,
+      "foreign" -> """(?i)foreign""".r,
+      "references" -> """(?i)references""".r,
+      "index" -> """(?i)index""".r,
+      "auto_increment" -> """(?i)auto_increment""".r,
+      "default" -> """(?i)default""".r,
+      "cascade" -> """(?i)cascade""".r,
+      "restrict" -> """(?i)restrict""".r,
+      "set" -> """(?i)set""".r,
       "select" -> """(?i)select""".r,
       "distinct" -> """(?i)distinct""".r,
       "from" -> """(?i)from""".r,
@@ -735,7 +810,19 @@ object SQLParser:
       "false" -> """(?i)false""".r,      
     )
     def drop = registry("drop")
+    def delete = registry("delete")
+    def create = registry("create")
     def table = registry("table")
+    def key = registry("key")
+    def primary = registry("primary")
+    def foreign = registry("foreign")
+    def references = registry("references")
+    def index = registry("index")
+    def auto_increment = registry("auto_increment")
+    def default = registry("default")
+    def cascade = registry("cascade")
+    def restrict = registry("restrict")
+    def set = registry("set")        
     def select = registry("select")
     def distinct = registry("distinct")
     def from = registry("from")

@@ -115,7 +115,33 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
         val typeStr = q.reflect.TypeRepr.of(using tpe).show(using q.reflect.Printer.TypeReprShortCode)
         '{"CAST(" + ${print(n)} + " AS " + ${Expr(typeStr)} + ")"}     
       case DropTable(name) => '{"DROP TABLE " + $name}
-      // case CreateTable(name, columns) => '{"CREATE TABLE " + $name + "(" + ")"}
+      case CreateTable(name, specs) => 
+        val specsStr = specs.map {
+          case CreateSpec.ColDef(colName ,tpe, mods) => 
+            val typeStr = q.reflect.TypeRepr.of(using tpe).show(using q.reflect.Printer.TypeReprShortCode)
+            val modsStr = mods.map {
+              case ColMod.AutoInc() => '{"AUTO_INCREMENT"}
+              case ColMod.Default(v) => '{"DEFAULT " + ${print(Literal(v))} }
+              case ColMod.NotNull() => '{"NOT NULL"}
+            }
+            '{ ${Expr(colName)} + " " + ${Expr(typeStr)} + ${Expr.ofList(modsStr)}.mkString(" ", " ", "")}
+          case CreateSpec.PK(columns) => '{"PRIMARY KEY (" + ${Expr(columns.mkString(", "))} + ")"}
+          case CreateSpec.FK(localCol, remoteTableName, remoteColName, onDelete) =>
+            val onDeleteStr = onDelete match
+              case OnDelete.Cascade => '{"CASCADE"}
+              case OnDelete.Restrict => '{"RESTRICT"}
+              case OnDelete.SetDefault => '{"SET DEFAULT"}
+              case OnDelete.SetNull => '{"SET NULL"}
+            '{"FOREIGN KEY (" + ${Expr(localCol)} + ") REFERENCES " + $remoteTableName + "(" + ${Expr(remoteColName)} + ") ON DELETE " + $onDeleteStr }
+          case CreateSpec.Index(indices) =>
+            val indicesStr = indices.map {
+              case (c, Order.Asc) => '{ ${Expr(c)} + " ASC" }
+              case (c, Order.Desc) => '{ ${Expr(c)} + " DESC" }
+            }
+            '{"INDEX (" + ${ Expr.ofList(indicesStr) }.mkString(", ") + ")"}
+        }
+
+        '{"CREATE TABLE " + $name + " (" + ${ Expr.ofList(specsStr) }.mkString(", ") + ")"}
 
   override protected def adaptSupport[S[+X] <: Iterable[X], A](
       tree: Node[Expr, Type]
