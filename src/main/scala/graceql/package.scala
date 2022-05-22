@@ -7,8 +7,8 @@ package object graceql {
   export graceql.core.Transaction
   export graceql.core.Transaction.transaction
 
-  transparent inline def query[R[_], M[+_]]: context.CallProxy[[x[_]] =>> QueryContext[x, M], R] = 
-    context[[x[_]] =>> QueryContext[x, M], R]
+  transparent inline def query[R[_], M[+_]]: context.CallProxy[QueryContext[R, M]] = 
+    context[QueryContext[R, M]]
 
   class FunctionsProxy[N[+_]](using c: Capabilities[N]):
 

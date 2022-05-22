@@ -1,6 +1,7 @@
 package jdbc.mysql
 
 import graceql.context.jdbc.mysql.*
+import graceql.context.jdbc.*
 import jdbc.JDBCSpec
 
 class MySQLSpec
@@ -10,4 +11,9 @@ class MySQLSpec
       None,
       "root",
       com.mysql.jdbc.Driver()
-    ) {}
+    ) {
+
+  withConnection {
+    runTests()
+  }    
+}

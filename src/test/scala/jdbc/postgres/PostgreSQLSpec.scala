@@ -1,7 +1,7 @@
 package jdbc.mysql
 
 import graceql.context.jdbc.postgres.*
-
+import graceql.context.jdbc.*
 import jdbc.JDBCSpec
 
 class PostgreSQLSpec
@@ -11,4 +11,9 @@ class PostgreSQLSpec
       Some("postgres"),
       "root",
       org.postgresql.Driver()
-    ) {}
+    ) {
+
+  withConnection {
+    runTests()
+  }    
+}

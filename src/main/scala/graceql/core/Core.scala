@@ -53,23 +53,6 @@ trait Capabilities[N[+_]]:
     def lift: N[A]   
     inline def |>[B](f: A => B) = f(a)
 
-trait Context[R[_]]:
-  self =>
-  type Native[+A] 
-  type Capabilities
-  type Connection
-
-  final type Execute[A, B] = graceql.core.Execute[R, Native, Connection, A, B]
-
-  type Exe[A] <: graceql.core.Exe[R, Native, Connection, A]
-
-  protected def exe[A](compiled: Native[A]): Exe[A]
-  
-  inline def apply[A](inline query: Capabilities ?=> A): Exe[A] =
-    exe(compile(query))
-
-  inline def compile[A](inline query: Capabilities ?=> A): Native[A]
-
 final type Read[R[_], M[_], T] = T match
   case (k, grpd)       => (k, Read[R, M, grpd])
   case Source[R, M, a] => M[Read[R, M, a]]
@@ -110,6 +93,23 @@ trait Queryable[R[_], M[_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] w
     def create(): Unit  
     @terminal
     def delete(): Unit    
+
+trait Context[R[_]]:
+  self =>
+  type Native[+A] 
+  type Capabilities
+  type Connection
+
+  final type Execute[A, B] = graceql.core.Execute[R, Native, Connection, A, B]
+
+  type Exe[A] <: graceql.core.Exe[R, Native, Connection, A]
+
+  protected def exe[A](compiled: Native[A]): Exe[A]
+  
+  inline def apply[A](inline query: Capabilities ?=> A): Exe[A] =
+    exe(compile(query))
+
+  inline def compile[A](inline query: Capabilities ?=> A): Native[A]    
 
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>

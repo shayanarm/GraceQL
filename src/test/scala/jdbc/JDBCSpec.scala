@@ -23,7 +23,8 @@ trait JDBCSpec[V](
     val user: Option[String],
     val password: String,
     val driver: Driver
-)(using qc: QueryContext[[x] =>> Table[V,x], Seq]) extends AnyFlatSpec
+)(using qc: QueryContext[[x] =>> Table[V, x], Seq])
+    extends AnyFlatSpec
     with should.Matchers {
 
   def connect(): Connection =
@@ -43,10 +44,27 @@ trait JDBCSpec[V](
   Connecting to the $vendor vendor using url: ${url}, user: ${user.orNull}, and pass: ${password}
   """ should "succeed" in {
     noException should be thrownBy {
-      withConnection { c ?=>
-     
-      }
+      withConnection { c ?=> }
     }
   }
 
+  case class User(id: Int, name: String)
+  case class Post(id: Int, userId: Int)
+
+  inline def runTests()(using ctx: JDBCQueryContext[V, Seq])(using conn: ctx.Connection) =
+    val users: Table[V, User] = Table[V, User]("users")
+    val posts: Table[V, Post] = Table[V, Post]("posts")
+      s"""
+        The high-level api
+        """ should "create a table" in {
+        sql[V, Seq] {
+          users.create()
+        }.run
+
+        it should "drop a table" in {
+          sql[V, Seq] {
+            users.delete()
+          }
+        }.run
+    }
 }

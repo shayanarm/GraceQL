@@ -19,9 +19,9 @@ object DBIO:
 
 trait JDBCQueryContext[V, S[+X] <: Iterable[X]] extends QueryContext[[x] =>> Table[V, x], S]: 
 
-  type Native[+A] = DBIO[A]
+  final type Native[+A] = DBIO[A]
 
-  type Connection = JConnection
+  final type Connection = JConnection
 
 object Table:
 
