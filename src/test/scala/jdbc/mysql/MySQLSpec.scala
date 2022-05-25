@@ -5,7 +5,7 @@ import graceql.context.jdbc.*
 import jdbc.JDBCSpec
 
 class MySQLSpec
-    extends JDBCSpec[MySQL](
+    extends JDBCSpec[MySQL, Seq](
       "MySQL",
       "jdbc:mysql://mysql:3306/",
       None,
@@ -13,7 +13,5 @@ class MySQLSpec
       com.mysql.jdbc.Driver()
     ) {
 
-  withConnection {
     runTests()
-  }    
 }

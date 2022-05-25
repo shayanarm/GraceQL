@@ -5,7 +5,7 @@ import graceql.context.jdbc.*
 import jdbc.JDBCSpec
 
 class PostgreSQLSpec
-    extends JDBCSpec[PostgreSQL](
+    extends JDBCSpec[PostgreSQL, Seq](
       "PostgreSQL",
       "jdbc:postgresql://postgres:5432/",
       Some("postgres"),
@@ -13,7 +13,5 @@ class PostgreSQLSpec
       org.postgresql.Driver()
     ) {
 
-  withConnection {
     runTests()
-  }    
 }

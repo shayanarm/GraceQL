@@ -52,5 +52,5 @@ class MemorySpec extends AnyFlatSpec with should.Matchers {
                 (() => "sdf").typed[Int]
             }.run    
             """ shouldNot compile
-        }             
+        }
 }

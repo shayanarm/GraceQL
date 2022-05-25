@@ -8,7 +8,7 @@ import scala.annotation.targetName
 
 trait VendorTreeCompiler[V]:
   self =>
-
+  import VendorTreeCompiler.*
   def compile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
   )(using
@@ -32,12 +32,10 @@ trait VendorTreeCompiler[V]:
       tv: Type[V],
       ts: Type[S]
   ):
-    type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
-
-    given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
-
-    import q.reflect.{Tree => _, Select => _, Block => _, Literal => SLiteral, *}
     import CompileOps.*
+    import q.reflect.{Tree => _, Select => _, Block => _, Literal => SLiteral, *}
+    type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
+    given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
 
     private class NameGenerator(private val prefix: String):
       private var counter = 1
@@ -50,25 +48,16 @@ trait VendorTreeCompiler[V]:
     private val nameGen = NameGenerator("x")
 
     val partials: Seq[CompileModule] = Seq(
-      modules.NativeSyntaxSupport
+      modules.NativeSyntaxSupport,
+      modules.DDLSupport
     )
-
-    protected def preprocess[A](
-        e: Expr[A]
-    )(using ta: Type[A]): Expr[A] =
-      import q.reflect.*
-      val pipe =
-        inlineDefs andThen
-          betaReduceAll andThen
-          inlineDefs
-      pipe(e.asTerm).asExprOf[A]
 
     def compile[A](expr: Expr[Q => A])(using
         ta: Type[A]
     ): Expr[DBIO[A]] =
 
       val fallback: PartialFunction[Expr[Any], Node[Expr, Type]] = { case e =>
-        report.errorAndAbort("Unsupported operation!", e.asTerm.pos)
+        report.errorAndAbort(s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}", e.asTerm.pos)
       }
       def toNative(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
         partials.foldRight(fallback) { (i, c) =>
@@ -86,20 +75,23 @@ trait VendorTreeCompiler[V]:
         tree: Node[Expr, Type]
     )(using ta: Type[A]): Expr[DBIO[A]] =
       import Node.*
-      '{ DBIO.Query(${ print(tree) }, (rs) => ???) }            
+      (ta, tree) match
+        case ('[Unit], _: DropTable[_,_]) => 
+          '{ DBIO.Statement(${ print(tree) }) }.asExprOf[DBIO[A]]
+        case _ => 
+          '{ DBIO.Query(${ print(tree) }, (rs) => ???) }   
 
-trait Encoders:
-  def boolean(l: Expr[Boolean])(using Quotes): Expr[String]
-  def char(l: Expr[Char])(using Quotes): Expr[String]
-  def byte(l: Expr[Byte])(using Quotes): Expr[String]
-  def short(l: Expr[Short])(using Quotes): Expr[String]
-  def int(l: Expr[Int])(using Quotes): Expr[String]
-  def long(l: Expr[Long])(using Quotes): Expr[String]
-  def float(l: Expr[Float])(using Quotes): Expr[String]
-  def double(l: Expr[Double])(using Quotes): Expr[String]
-  def string(l: Expr[String])(using Quotes): Expr[String]
-  def alias(l: String)(using Quotes): String
-  def tableName(l: Expr[String])(using Quotes): Expr[String]
+object VendorTreeCompiler:
+  def preprocess[A](
+      e: Expr[A]
+  )(using q: Quotes, ta: Type[A]): Expr[A] =
+    import q.reflect.*
+    import CompileOps.*
+    val pipe =
+      inlineDefs andThen
+        betaReduceAll andThen
+        inlineDefs
+    pipe(e.asTerm).asExprOf[A]              
 
 class Context(
     val refMap: Map[Any, String] = Map.empty[Any, String]
@@ -141,3 +133,7 @@ abstract class CompileModule:
       tv: Type[V],
       ts: Type[S]
   ): PartialFunction[Expr[Any], Node[Expr, Type]]
+
+  protected def withImplicit[P, A](p: Expr[P])(f: Expr[P ?=> A])(using Quotes, Type[P], Type[A]): Expr[A] = 
+    VendorTreeCompiler.preprocess('{$f(using $p)})
+
