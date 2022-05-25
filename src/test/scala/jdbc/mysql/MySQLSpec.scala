@@ -7,7 +7,7 @@ import jdbc.JDBCSpec
 class MySQLSpec
     extends JDBCSpec[MySQL, Seq](
       "MySQL",
-      "jdbc:mysql://mysql:3306/",
+      "jdbc:mysql://mysql:3306/testdb",
       None,
       "root",
       com.mysql.jdbc.Driver()

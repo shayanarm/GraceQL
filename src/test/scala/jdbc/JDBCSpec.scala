@@ -34,17 +34,15 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
   inline def runTests()(using ctx: JDBCQueryContext[V, S]) =
     implicit var connection: ctx.Connection = null
     before {
-      connection = {
-        DriverManager.registerDriver(driver)
-        DriverManager.getConnection(url, user.orNull, password)
-      }
+      DriverManager.registerDriver(driver)
+      connection = DriverManager.getConnection(url, user.orNull, password)
     }
     after {
       connection.close()
     }
 
     s"""
-    The high-level api
+    Using the high-level api to carry out various commands
     """ should "drop a table" in {
       // noException should be thrownBy {
         sql[V, S] {
