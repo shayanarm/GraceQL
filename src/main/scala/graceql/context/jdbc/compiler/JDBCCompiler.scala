@@ -3,7 +3,7 @@ package graceql.context.jdbc.compiler
 import scala.quoted.*
 import graceql.core.*
 import graceql.context.jdbc.*
-import graceql.util.CompileOps
+import graceql.quoted.CompileOps
 import scala.annotation.targetName
 
 trait VendorTreeCompiler[V]:
@@ -47,9 +47,9 @@ trait VendorTreeCompiler[V]:
         }
     private val nameGen = NameGenerator("x")
 
-    val partials: Seq[CompileModule] = Seq(
-      modules.NativeSyntaxSupport,
-      modules.DDLSupport
+    val partials: Seq[CompileModule[V, S]] = Seq(
+      modules.NativeSyntaxSupport[V, S],
+      modules.DDLSupport[V, S]
     )
 
     def compile[A](expr: Expr[Q => A])(using
@@ -61,7 +61,7 @@ trait VendorTreeCompiler[V]:
       }
       def toNative(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
         partials.foldRight(fallback) { (i, c) =>
-          i[V, S](toNative, nameGen.nextName)(ctx).orElse(c)
+          i(toNative, nameGen.nextName)(ctx).orElse(c)
         }
 
       val pipe =
@@ -107,7 +107,7 @@ class Context(
   def literalEncodable(using q: Quotes)(expr: Expr[Any]): Boolean =
     import q.reflect.*
     var encountered = false
-    val symbol = Symbol.requiredMethod("graceql.util.CompileOps.placeholder")
+    val symbol = Symbol.requiredMethod("graceql.quoted.CompileOps.placeholder")
     new q.reflect.TreeTraverser {
       override def traverseTree(tree: q.reflect.Tree)(owner: Symbol): Unit =
         tree match
@@ -124,15 +124,19 @@ class Context(
   def refName(using q: Quotes)(tree: q.reflect.Tree): String =
     refMap(tree)
 
-abstract class CompileModule:
-  def apply[V, S[+X] <: Iterable[X]](
+abstract class CompileModule[V, S[+X] <: Iterable[X]](using
+      val q: Quotes,
+      val tv: Type[V],
+      val ts: Type[S]
+  ):
+
+  type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
+  given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
+
+  def apply(
       recurse: Context => Expr[Any] => Node[Expr, Type],
       nameGen: () => String
-  )(ctx: Context)(using
-      q: Quotes,
-      tv: Type[V],
-      ts: Type[S]
-  ): PartialFunction[Expr[Any], Node[Expr, Type]]
+  )(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]]
 
   protected def withImplicit[P, A](p: Expr[P])(f: Expr[P ?=> A])(using Quotes, Type[P], Type[A]): Expr[A] = 
     VendorTreeCompiler.preprocess('{$f(using $p)})

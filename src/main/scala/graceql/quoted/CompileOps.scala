@@ -1,4 +1,4 @@
-package graceql.util
+package graceql.quoted
 
 import scala.quoted.*
 import graceql.core.GraceException

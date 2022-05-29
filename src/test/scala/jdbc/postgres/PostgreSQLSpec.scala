@@ -1,5 +1,4 @@
-package jdbc.mysql
-
+package jdbc.postgres
 import graceql.context.jdbc.postgres.*
 import graceql.context.jdbc.*
 import jdbc.JDBCSpec

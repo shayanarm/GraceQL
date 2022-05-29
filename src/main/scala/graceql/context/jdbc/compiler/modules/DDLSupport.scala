@@ -4,20 +4,14 @@ import scala.quoted.*
 import graceql.core.{Context => _, *}
 import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
-import graceql.util.CompileOps
+import graceql.quoted.CompileOps
 import scala.annotation.targetName
 
-object DDLSupport extends CompileModule:
-  def apply[V, S[+X] <: Iterable[X]](
+class DDLSupport[V, S[+X] <: Iterable[X]](using q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
+  def apply(
       recurse: Context => Expr[Any] => Node[Expr, Type],
       nameGen: () => String
-  )(ctx: Context)(using
-      q: Quotes,
-      tv: Type[V],
-      ts: Type[S]
-  ): PartialFunction[Expr[Any], Node[Expr, Type]] =
-    type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
-    given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
+  )(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
     import q.reflect.{
       Select => _,
       Block => _,
@@ -33,4 +27,12 @@ object DDLSupport extends CompileModule:
           } => recurse(ctx)(withImplicit(c)('{ _ ?=>
             native"drop table ${$table.lift}".unlift
           }))
+      case '{
+            ($c: Q).create(
+              $table: Table[V, a]
+            )()
+          } => 
+            val trep = TypeRepr.of[a]
+            trep.typeSymbol.caseFields.foreach(println)
+            ???                      
     }

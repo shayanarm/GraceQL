@@ -10,6 +10,7 @@ trait MemoryQueryContextImpl[R[_]]:
   opaque type IterableFactoryWrapper[S[X] <: Iterable[X]] = IterableFactory[S]
   object IterableFactoryWrapper:
     given IterableFactoryWrapper[Seq] = Seq
+    given IterableFactoryWrapper[IndexedSeq] = IndexedSeq
     given IterableFactoryWrapper[List] = List
     given IterableFactoryWrapper[Vector] = Vector
     given IterableFactoryWrapper[LazyList] = LazyList
