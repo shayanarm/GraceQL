@@ -85,7 +85,7 @@ object SQLRow:
 //       .asInstanceOf[S[Any]]
 //       .map(any => ta.listToMirror(List(Some(any))))
 //       .to(iterf)
-//   protected def mirrorToList(as: S[ta.Mirror]): List[Option[Any]] =
+//   def mirrorToList(as: S[ta.Mirror]): List[Option[Any]] =
 //     List(Some(as.map(a => ta.mirrorToList(a).head.get)))
 
 // object SQLJsonArray:
@@ -106,7 +106,7 @@ object SQLRow:
 //     final def to(a: A): Json = ???
 //     final def from(m: Json): A = ???  
 //     protected def listToMirror(r: List[Option[Any]]): Json = r.head.get.asInstanceOf[Json]
-//     protected def mirrorToList(a: Json): List[Option[Any]] = List(Some(a))
+//     def mirrorToList(a: Json): List[Option[Any]] = List(Some(a))
 
 trait SQLMirror[A, M]:
   self =>
@@ -116,7 +116,7 @@ trait SQLMirror[A, M]:
   def to(a: A): M
   def from(m: M): A
   protected def listToMirror(r: List[Option[Any]]): M
-  protected def mirrorToList(a: M): List[Option[Any]]
+  def mirrorToList(a: M): List[Option[Any]]
   object dynamic:
     inline def from(r: List[Option[Any]]): Try[A] = Try{self.from(listToMirror(r))}
     inline def to(a: A): List[Option[Any]] = mirrorToList(self.to(a))
@@ -165,7 +165,7 @@ object SQLMirror:
       else
         r.head.fold(None)(i => Some(ta.listToMirror(List(Some(i))))).asInstanceOf[Mirror]    
           
-    protected def mirrorToList(a: Mirror): List[Option[Any]] = 
+    def mirrorToList(a: Mirror): List[Option[Any]] = 
       if isTuple then
         val elems = a.asInstanceOf[Tuple].productIterator.toArray.map(_.asInstanceOf[Option[Any]])
         if (elems.forall(_.isDefined)) then
@@ -183,7 +183,7 @@ object SQLMirror:
     protected def listToMirror(r: List[Option[Any]]): EmptyTuple =
       assert(r.isEmpty)
       EmptyTuple
-    protected def mirrorToList(a: EmptyTuple): List[Option[Any]] = Nil
+    def mirrorToList(a: EmptyTuple): List[Option[Any]] = Nil
 
   given inductiveTuple[H, T <: Tuple, MH, MT <: Tuple](using th: SQLMirror[H, MH])(using tt: SQLMirror[T, MT]): SQLMirror[H *: T, Tuple.Concat[ToTuple[MH], MT]] with
     def isTuple = true
@@ -204,7 +204,7 @@ object SQLMirror:
         case x => Tuple(x)
       (tup ++ tt.listToMirror(r)).asInstanceOf[Mirror]
 
-    protected def mirrorToList(a: Mirror): List[Option[Any]] =
+    def mirrorToList(a: Mirror): List[Option[Any]] =
       val (l, r) = a.productIterator.toArray.splitAt(th.arity)
       val formatted = (if th.isTuple then Tuple.fromArray(l) else l.head).asInstanceOf[MH]
       th.mirrorToList(formatted) ++ tt.mirrorToList(Tuple.fromArray(r).asInstanceOf[MT])
@@ -219,7 +219,7 @@ object SQLMirror:
     final protected def listToMirror(r: List[Option[Any]]): A =
       r.head.get.asInstanceOf[A]
 
-    final protected def mirrorToList(m: A): List[Option[Any]] = List(Some(m))
+    final def mirrorToList(m: A): List[Option[Any]] = List(Some(m))
 
   given product[P <: Product, M <: Tuple](using ev: SQLRow[P] ,prodMirr: Mirror.ProductOf[P], sqlTup: SQLMirror[prodMirr.MirroredElemTypes, M]): SQLMirror[P, M] with {
         def arity: Int = sqlTup.arity
@@ -229,7 +229,7 @@ object SQLMirror:
         def from(m: M): P = 
           prodMirr.fromProduct(sqlTup.from(m)) 
         protected def listToMirror(r: List[Option[Any]]): M = sqlTup.listToMirror(r)
-        protected def mirrorToList(a: M): List[Option[Any]] = sqlTup.mirrorToList(a)
+        def mirrorToList(a: M): List[Option[Any]] = sqlTup.mirrorToList(a)
   }
 
   given mapped[A, B, M](using mppd: SQLMapped[A,B], ta: SQLMirror[A, M]): SQLMirror[B, M] with
@@ -244,7 +244,7 @@ object SQLMirror:
 
     final protected def listToMirror(r: List[Option[Any]]): M = ta.listToMirror(r)
     
-    final protected def mirrorToList(m: M): List[Option[Any]] = ta.mirrorToList(m)
+    final def mirrorToList(m: M): List[Option[Any]] = ta.mirrorToList(m)
 
   given valueClass[O <: Product, I, M](using vc: SQLValueClass[O], ti: SQLMirror[vc.Inner, M]): SQLMirror[O, M] with
     final def to(o: O): M = ti.to(vc.unbox(o))
@@ -253,4 +253,4 @@ object SQLMirror:
     def isTuple = false
     def arity = 1
     protected def listToMirror(r: List[Option[Any]]): M = ti.listToMirror(r)
-    protected def mirrorToList(m: M): List[Option[Any]] = ti.mirrorToList(m)
+    def mirrorToList(m: M): List[Option[Any]] = ti.mirrorToList(m)
