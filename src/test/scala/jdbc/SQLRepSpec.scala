@@ -6,11 +6,10 @@ import matchers._
 import graceql.context.jdbc.*
 
 class SQLRepSpec extends AnyFlatSpec with should.Matchers {
-  case class User(id: Int, name: String) derives SQLRow
+  case class ContactInfo(phone: String, email: String) derives SQLRow
   case class UserId(underying: Int) derives SQLValueClass
+  case class User(id: UserId, name: String, contactInfo: Option[ContactInfo]) derives SQLRow
 
-  val row = summon[SQLRep[User]].toRow(User(1, "Shayan"))
-  println(row)
-  val user = summon[SQLRep[User]].fromRow(row)
-  println(user)
+  def testTest[A, M](using rep: SQLMirror.Of[A])(using ev: M =:= rep.Mirror): Unit = ()
+  typeTest[User, (Int, String, Option[String], Option[String])]
 }
