@@ -68,6 +68,7 @@ enum CreateSpec[L[_],T[_]]:
   case PK[L[_], T[_]](columns: List[String]) extends CreateSpec[L,T]
   case FK[L[_], T[_]](localCol: String, remoteTableName: L[String], remoteColName: String, onDelete: OnDelete) extends CreateSpec[L,T]
   case Index[L[_], T[_]](indices: List[(String, Order)]) extends CreateSpec[L,T]
+  case Unique[L[_], T[_]](indices: List[String]) extends CreateSpec[L,T]
 
 enum ColMod[L[_]]:
   case NotNull[L[_]]() extends ColMod[L]
@@ -325,6 +326,7 @@ enum Node[L[_], T[_]]:
           case CreateSpec.PK(ks) => CreateSpec.PK(ks)
           case CreateSpec.FK(l, tname, r, od) => CreateSpec.FK(l, fl(tname), r, od)
           case CreateSpec.Index(is) => CreateSpec.Index(is)
+          case CreateSpec.Unique(is) => CreateSpec.Unique(is)
         })
 
 object Node:
@@ -522,13 +524,17 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       CreateSpec.Index(is.map{case Column(c) ~ o => (c, o)})
     }
 
+    def unique: Parser[CreateSpec[L,T]] = kw.unique ~> parens(true)(rep1sep(expr.column, kw.`,`)) ^^ {is => 
+      CreateSpec.Unique(is.map{case Column(c) => c})
+    }
+
     def columnModifier: Parser[ColMod[L]] = 
       def autoInc: Parser[ColMod[L]] = kw.auto_increment ^^ {_ => ColMod.AutoInc()}
       def notNull: Parser[ColMod[L]] = kw.not ~> kw.`null` ^^ {_ => ColMod.NotNull()}
       def default: Parser[ColMod[L]] = kw.default ~> embedded.literal ^^ {case Literal(l) => ColMod.Default(l)}
       autoInc | notNull | default
 
-    def columnSpec: Parser[CreateSpec[L,T]] = fk | pk | index | columnDef
+    def columnSpec: Parser[CreateSpec[L,T]] = fk | pk | index | unique | columnDef
     def apply(v: Input): ParseResult[N] =
       def parser = kw.create ~> kw.table ~> embedded.table ~ parens(true)(rep1sep(columnSpec, kw.`,`)) ^^ {case Table(n,_) ~ specs => CreateTable(n,specs)}
       parser(v)
@@ -746,7 +752,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
 object SQLParser:
   object kw:
-    val registry: Map[String, Regex] = Map(
+    lazy val registry: Map[String, Regex] = Map(
       "drop" -> """(?i)drop""".r,
       "delete" -> """(?i)delete""".r,
       "create" -> """(?i)create""".r,
@@ -756,6 +762,7 @@ object SQLParser:
       "foreign" -> """(?i)foreign""".r,
       "references" -> """(?i)references""".r,
       "index" -> """(?i)index""".r,
+      "unique" -> """(?i)unique""".r,
       "auto_increment" -> """(?i)auto_increment""".r,
       "default" -> """(?i)default""".r,
       "cascade" -> """(?i)cascade""".r,
@@ -818,6 +825,7 @@ object SQLParser:
     def foreign = registry("foreign")
     def references = registry("references")
     def index = registry("index")
+    def unique = registry("unique")
     def auto_increment = registry("auto_increment")
     def default = registry("default")
     def cascade = registry("cascade")

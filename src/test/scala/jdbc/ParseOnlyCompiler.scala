@@ -139,6 +139,9 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
               case (c, Order.Desc) => '{ ${Expr(c)} + " DESC" }
             }
             '{"INDEX (" + ${ Expr.ofList(indicesStr) }.mkString(", ") + ")"}
+          case CreateSpec.Unique(indices) =>
+            val indicesStr = indices.map(Expr(_))
+            '{"UNIQUE (" + ${ Expr.ofList(indicesStr) }.mkString(", ") + ")"}            
         }
 
         '{"CREATE TABLE " + $name + " (" + ${ Expr.ofList(specsStr) }.mkString(", ") + ")"}

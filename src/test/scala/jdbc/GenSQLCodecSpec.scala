@@ -267,17 +267,18 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  it should "parse a CREATE TABLE statement" in {
+  it should "parse a comprehensive CREATE TABLE statement" in {
     parseAssert {
       native"""create table ${posts.lift} (
           id ${classOf[Int].lift} auto_increment default ${0.lift},
           userId ${classOf[Int].lift} not null,
           primary key (id),
           foreign key (userId) references ${users.lift}(id) on delete cascade,
-          index (id asc, userId desc)
+          index (id asc, userId desc),
+          unique (id, userId)
         )""".unlift
     } {
-      "CREATE TABLE posts (id Int AUTO_INCREMENT DEFAULT 0, userId Int NOT NULL, PRIMARY KEY (id), FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE, INDEX (id ASC, userId DESC))"
+      "CREATE TABLE posts (id Int AUTO_INCREMENT DEFAULT 0, userId Int NOT NULL, PRIMARY KEY (id), FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE, INDEX (id ASC, userId DESC), UNIQUE (id, userId))"
     }
   }
 }
