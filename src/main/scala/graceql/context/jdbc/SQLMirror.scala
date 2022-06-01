@@ -7,6 +7,7 @@ import graceql.core.GraceException
 import graceql.data.*
 import graceql.typelevel.*
 import scala.quoted.*
+import scala.util.Try
 
 object Row
 object Base
@@ -22,6 +23,7 @@ abstract class SQLEncoding[A, E <: Encodings](val encoding: E):
   final type Encoding = E
 
 object SQLEncoding:
+  type Of[A] = SQLEncoding[A, _]
   // given jsonArraySeq[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[Seq, A] = SQLJsonArray(Seq)
   // given jsonArrayIndexedSeq[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[IndexedSeq, A] = SQLJsonArray(IndexedSeq)
   // given jsonArrayList[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[List, A] = SQLJsonArray(List)
@@ -78,12 +80,12 @@ object SQLRow:
 
 //   final def from(m: S[ta.Mirror]): S[A] = m.map(ta.from).to(iterf)  
 
-//   def listToMirror(r: List[Option[Any]]): S[ta.Mirror] =
+//   protected def listToMirror(r: List[Option[Any]]): S[ta.Mirror] =
 //     r.head.get
 //       .asInstanceOf[S[Any]]
 //       .map(any => ta.listToMirror(List(Some(any))))
 //       .to(iterf)
-//   def mirrorToList(as: S[ta.Mirror]): List[Option[Any]] =
+//   protected def mirrorToList(as: S[ta.Mirror]): List[Option[Any]] =
 //     List(Some(as.map(a => ta.mirrorToList(a).head.get)))
 
 // object SQLJsonArray:
@@ -103,19 +105,23 @@ object SQLRow:
 //   inline given derived[A](using m: Mirror.Of[A]): SQLJsonADT[A] with
 //     final def to(a: A): Json = ???
 //     final def from(m: Json): A = ???  
-//     def listToMirror(r: List[Option[Any]]): Json = r.head.get.asInstanceOf[Json]
-//     def mirrorToList(a: Json): List[Option[Any]] = List(Some(a))
+//     protected def listToMirror(r: List[Option[Any]]): Json = r.head.get.asInstanceOf[Json]
+//     protected def mirrorToList(a: Json): List[Option[Any]] = List(Some(a))
 
 trait SQLMirror[A, M]:
+  self =>
   final type Mirror = M  
   def isTuple: Boolean
   def arity: Int
   def to(a: A): M
   def from(m: M): A
-  def listToMirror(r: List[Option[Any]]): M
-  def mirrorToList(a: M): List[Option[Any]]
-  final def fromList(r: List[Option[Any]]): A = from(listToMirror(r))
-  final def toList(a: A): List[Option[Any]] = mirrorToList(to(a))
+  protected def listToMirror(r: List[Option[Any]]): M
+  protected def mirrorToList(a: M): List[Option[Any]]
+  object dynamic:
+    inline def from(r: List[Option[Any]]): Try[A] = Try{self.from(listToMirror(r))}
+    inline def to(a: A): List[Option[Any]] = mirrorToList(self.to(a))
+    def unapply(r: List[Option[Any]]) : Option[(A, M)] = 
+      Try { listToMirror(r) }.toOption.map(m => (self.from(m),m))
 
 object SQLMirror:
   type Of[A] = SQLMirror[A, _]
@@ -149,7 +155,7 @@ object SQLMirror:
       else
         m.asInstanceOf[Option[M]].map(ta.from)      
 
-    def listToMirror(r: List[Option[Any]]): Mirror =
+    protected def listToMirror(r: List[Option[Any]]): Mirror =
       if isTuple then
         if r.forall(_.isEmpty) then
           Tuple.fromArray(r.toArray).asInstanceOf[Mirror]
@@ -159,7 +165,7 @@ object SQLMirror:
       else
         r.head.fold(None)(i => Some(ta.listToMirror(List(Some(i))))).asInstanceOf[Mirror]    
           
-    def mirrorToList(a: Mirror): List[Option[Any]] = 
+    protected def mirrorToList(a: Mirror): List[Option[Any]] = 
       if isTuple then
         val elems = a.asInstanceOf[Tuple].productIterator.toArray.map(_.asInstanceOf[Option[Any]])
         if (elems.forall(_.isDefined)) then
@@ -174,10 +180,10 @@ object SQLMirror:
     def arity: Int = 0
     def to(a: EmptyTuple): EmptyTuple = a
     def from(m: EmptyTuple): EmptyTuple = m 
-    def listToMirror(r: List[Option[Any]]): EmptyTuple =
+    protected def listToMirror(r: List[Option[Any]]): EmptyTuple =
       assert(r.isEmpty)
       EmptyTuple
-    def mirrorToList(a: EmptyTuple): List[Option[Any]] = Nil
+    protected def mirrorToList(a: EmptyTuple): List[Option[Any]] = Nil
 
   given inductiveTuple[H, T <: Tuple, MH, MT <: Tuple](using th: SQLMirror[H, MH])(using tt: SQLMirror[T, MT]): SQLMirror[H *: T, Tuple.Concat[ToTuple[MH], MT]] with
     def isTuple = true
@@ -191,14 +197,14 @@ object SQLMirror:
       val formatted = (if th.isTuple then Tuple.fromArray(l) else l.head).asInstanceOf[MH]
       th.from(formatted) *: tt.from(Tuple.fromArray(r).asInstanceOf[MT])
 
-    def listToMirror(row: List[Option[Any]]): Mirror =
+    protected def listToMirror(row: List[Option[Any]]): Mirror =
       val (l, r) = row.splitAt(th.arity)
       val tup = th.listToMirror(l) match 
         case x: Tuple => x
         case x => Tuple(x)
       (tup ++ tt.listToMirror(r)).asInstanceOf[Mirror]
 
-    def mirrorToList(a: Mirror): List[Option[Any]] =
+    protected def mirrorToList(a: Mirror): List[Option[Any]] =
       val (l, r) = a.productIterator.toArray.splitAt(th.arity)
       val formatted = (if th.isTuple then Tuple.fromArray(l) else l.head).asInstanceOf[MH]
       th.mirrorToList(formatted) ++ tt.mirrorToList(Tuple.fromArray(r).asInstanceOf[MT])
@@ -210,10 +216,10 @@ object SQLMirror:
     
     final def from(m: A): A = m
 
-    final def listToMirror(r: List[Option[Any]]): A =
+    final protected def listToMirror(r: List[Option[Any]]): A =
       r.head.get.asInstanceOf[A]
 
-    final def mirrorToList(m: A): List[Option[Any]] = List(Some(m))
+    final protected def mirrorToList(m: A): List[Option[Any]] = List(Some(m))
 
   given product[P <: Product, M <: Tuple](using ev: SQLRow[P] ,prodMirr: Mirror.ProductOf[P], sqlTup: SQLMirror[prodMirr.MirroredElemTypes, M]): SQLMirror[P, M] with {
         def arity: Int = sqlTup.arity
@@ -222,8 +228,8 @@ object SQLMirror:
         def to(a: P): M = sqlTup.to(Tuple.fromProductTyped(a))
         def from(m: M): P = 
           prodMirr.fromProduct(sqlTup.from(m)) 
-        def listToMirror(r: List[Option[Any]]): M = sqlTup.listToMirror(r)
-        def mirrorToList(a: M): List[Option[Any]] = sqlTup.mirrorToList(a)
+        protected def listToMirror(r: List[Option[Any]]): M = sqlTup.listToMirror(r)
+        protected def mirrorToList(a: M): List[Option[Any]] = sqlTup.mirrorToList(a)
   }
 
   given mapped[A, B, M](using mppd: SQLMapped[A,B], ta: SQLMirror[A, M]): SQLMirror[B, M] with
@@ -236,9 +242,9 @@ object SQLMirror:
 
     final def from(m: M): B = mppd.encoding.from(ta.from(m))
 
-    final def listToMirror(r: List[Option[Any]]): M = ta.listToMirror(r)
+    final protected def listToMirror(r: List[Option[Any]]): M = ta.listToMirror(r)
     
-    final def mirrorToList(m: M): List[Option[Any]] = ta.mirrorToList(m)
+    final protected def mirrorToList(m: M): List[Option[Any]] = ta.mirrorToList(m)
 
   given valueClass[O <: Product, I, M](using vc: SQLValueClass[O], ti: SQLMirror[vc.Inner, M]): SQLMirror[O, M] with
     final def to(o: O): M = ti.to(vc.unbox(o))
@@ -246,5 +252,5 @@ object SQLMirror:
 
     def isTuple = false
     def arity = 1
-    def listToMirror(r: List[Option[Any]]): M = ti.listToMirror(r)
-    def mirrorToList(m: M): List[Option[Any]] = ti.mirrorToList(m)
+    protected def listToMirror(r: List[Option[Any]]): M = ti.listToMirror(r)
+    protected def mirrorToList(m: M): List[Option[Any]] = ti.mirrorToList(m)
