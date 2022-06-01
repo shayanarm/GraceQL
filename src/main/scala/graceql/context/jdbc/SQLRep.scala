@@ -22,18 +22,17 @@ abstract class SQLEncoding[A, E <: Encodings](val encoding: E):
   final type Encoding = E
 
 object SQLEncoding:
-
   // given jsonArraySeq[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[Seq, A] = SQLJsonArray(Seq)
   // given jsonArrayIndexedSeq[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[IndexedSeq, A] = SQLJsonArray(IndexedSeq)
   // given jsonArrayList[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[List, A] = SQLJsonArray(List)
   // given jsonArrayVector[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[Vector, A] = SQLJsonArray(Vector)
   // given jsonArrayLazyList[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[LazyList, A] = SQLJsonArray(LazyList)
-  // given jsonArrayIterable[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[Iterable, A] = SQLJsonArray(Iterable)      
-
+  // given jsonArrayIterable[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[Iterable, A] = SQLJsonArray(Iterable)
   given SQLBase[Int] with {}
-  given SQLBase[String] with {}
+  given SQLBase[String] with {}    
 
 abstract class SQLBase[A] extends SQLEncoding[A, Base.type](Base)
+object SQLBase
 
 abstract class SQLMapped[A, B](encoding: Mapped[A, B])(using ta: SQLEncoding[A, _])(using ev: ta.Encoding <:< Column) extends SQLEncoding[A, Mapped[A, B]](encoding)
 
@@ -41,6 +40,26 @@ object SQLMapped:
   def apply[A, B](_from: A => B, _to: B => A)(using ta: SQLEncoding[A, _])(using
       ev: ta.Encoding <:< Column
   ): SQLMapped[A, B] = new SQLMapped[A, B](Mapped(_from,_to)) {}
+
+abstract class SQLValueClass[O <: Product] extends SQLEncoding[O, ValueClass.type](ValueClass) {
+  type Inner
+  protected val m: Mirror.ProductOf[O] {type MirroredElemTypes = Inner *: EmptyTuple}
+  protected val ev: SQLEncoding[Inner,_]#Encoding <:< Column
+  final def unbox(o: O): Inner = Tuple.fromProductTyped(o)(using m).productElement(0).asInstanceOf[Inner]
+  final def box(i: Inner): O = m.fromProduct(Tuple(i))
+}
+
+object SQLValueClass:
+  given derived[O <: Product, I, E <: Encodings](using _m: Mirror.ProductOf[O] {type MirroredElemTypes = I *: EmptyTuple}, repi: SQLEncoding[I, _], ev0: repi.Encoding <:< Column): SQLValueClass[O] with {
+    type Inner = I
+    val m = _m
+    val ev: SQLEncoding[Inner,_]#Encoding <:< Column = ev0.asInstanceOf[SQLEncoding[Inner,_]#Encoding <:< Column]
+  }
+  
+abstract class SQLRow[A <: Product](using ev: Mirror.ProductOf[A]) extends SQLEncoding[A, Row.type](Row)
+
+object SQLRow:
+  given derived[P <: Product](using ev: Mirror.ProductOf[P]): SQLRow[P] with {}
 
 // sealed trait SQLJsonArray[S[+X] <: Iterable[X], A](
 //     val iterf: IterableFactory[S]
@@ -86,27 +105,6 @@ object SQLMapped:
 //     final def from(m: Json): A = ???  
 //     def listToMirror(r: List[Option[Any]]): Json = r.head.get.asInstanceOf[Json]
 //     def mirrorToList(a: Json): List[Option[Any]] = List(Some(a))
-
-abstract class SQLValueClass[O <: Product] extends SQLEncoding[O, ValueClass.type](ValueClass) {
-  type Inner
-  protected val m: Mirror.ProductOf[O] {type MirroredElemTypes = Inner *: EmptyTuple}
-  protected val ev: SQLEncoding[Inner,_]#Encoding <:< Column
-  final def unbox(o: O): Inner = Tuple.fromProductTyped(o)(using m).productElement(0).asInstanceOf[Inner]
-  final def box(i: Inner): O = m.fromProduct(Tuple(i))
-}
-
-object SQLValueClass:
-  given derived[O <: Product, I, E <: Encodings](using _m: Mirror.ProductOf[O] {type MirroredElemTypes = I *: EmptyTuple}, repi: SQLEncoding[I, _], ev0: repi.Encoding <:< Column): SQLValueClass[O] with {
-    type Inner = I
-    val m = _m
-    val ev: SQLEncoding[Inner,_]#Encoding <:< Column = ev0.asInstanceOf[SQLEncoding[Inner,_]#Encoding <:< Column]
-  }
-  
-
-abstract class SQLRow[A <: Product](using ev: Mirror.ProductOf[A]) extends SQLEncoding[A, Row.type](Row)
-
-object SQLRow:
-  given derived[P <: Product](using ev: Mirror.ProductOf[P]): SQLRow[P] with {}
 
 trait SQLMirror[A, M]:
   final type Mirror = M  
