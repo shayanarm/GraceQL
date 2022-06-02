@@ -1,4 +1,4 @@
-package graceql.context.jdbc
+package graceql.context.jdbc.compiler
 
 import graceql.core.*
 import scala.util.parsing.combinator._
@@ -127,8 +127,8 @@ enum Node[L[_], T[_]]:
   ) extends Node[L, T]
   case Union[L[_], T[_]](left: Node[L, T], right: Node[L, T]) extends Node[L, T]
   case Block[L[_], T[_]](stmts: List[Node[L, T]]) extends Node[L, T]
-  case DropTable[L[_], T[_]](tableName: L[String]) extends Node[L, T]
-  case CreateTable[L[_], T[_]](tableName: L[String], specs: List[CreateSpec[L,T]]) extends Node[L, T]
+  case DropTable[L[_], T[_]](table: Node[L, T]) extends Node[L, T]
+  case CreateTable[L[_], T[_]](table: Node[L, T], specs: Option[List[CreateSpec[L,T]]]) extends Node[L, T]
 
   object transform:
     def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
@@ -183,8 +183,8 @@ enum Node[L[_], T[_]]:
         case Union(l, r) =>
           Union(l.transform.pre(f), r.transform.pre(f))
         case Block(stmts) => Block(stmts.map(_.transform.pre(f)))
-        case DropTable(_) => node
-        case CreateTable(_, _) => node
+        case DropTable(t) => DropTable(t.transform.pre(f))
+        case CreateTable(t, s) => CreateTable(t.transform.pre(f), s)
 
     def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
       val g = f.orElse { case t => t }
@@ -238,9 +238,65 @@ enum Node[L[_], T[_]]:
         case Union(l, r) =>
           Union(l.transform.post(f), r.transform.post(f))
         case Block(stmts) => Block(stmts.map(_.transform.post(f)))
-        case DropTable(_) => node
-        case CreateTable(_, _) => node
+        case DropTable(t) => DropTable(t.transform.post(f))
+        case CreateTable(t, s) => CreateTable(t.transform.post(f), s)
       g(n)
+
+    protected inline def fold[A](f: A => PartialFunction[Node[L, T], A]): A => A = fold(_)(f)
+    def fold[A](initial: A)(f: A => PartialFunction[Node[L, T], A]): A =
+      val g = f(initial).orElse { case t => initial }
+      val acc = g(node)
+      val composed: A => A = node match
+        case Literal(_) => identity
+        case Select(
+              distinct,
+              columns,
+              from,
+              joins,
+              where,
+              groupBy,
+              orderBy,
+              offset,
+              limit
+            ) =>
+          columns.transform.fold(f) andThen 
+            from.transform.fold(f) andThen
+            joins.foldLeft(identity[A]){case (z, (jt, s, o)) => 
+              z andThen s.transform.fold(f) andThen o.transform.fold(f)
+            } andThen
+            where.foldLeft(identity[A]){(z,i) => 
+              z andThen i.transform.fold(f)
+            } andThen
+            groupBy.foldLeft(identity[A]){case (z, (es, h)) => 
+              z andThen es.transform.fold(f) andThen h.foldLeft(identity[A]){(z2, i) => 
+                z2 andThen i.transform.fold(f)
+              }
+            } andThen
+            orderBy.foldLeft(identity[A]){case (z, (t, o)) => 
+              z andThen t.transform.fold(f)
+            } andThen offset.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f)) andThen
+            limit.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f))
+        case Star()          => identity
+        case Column(_)       => identity
+        case Tuple(elems)    => elems.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f))
+        case Table(_, _)     => identity
+        case Values(_)       => identity
+        case Dual()          => identity
+        case As(t, n)        => t.transform.fold(f)
+        case Ref(_)          => identity
+        case SelectCol(t, c) => t.transform.fold(f) andThen c.transform.fold(f)
+        case FunApp(n, args, tpe) => args.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f)) 
+        case TypeLit(_)      => identity
+        case Cast(t, tpe)    => t.transform.fold(f)
+        case TypeAnn(t, tpe) => t.transform.fold(f)
+        case Null()          => identity
+        case Any(c, o, s) => c.transform.fold(f) andThen s.transform.fold(f)
+        case All(c, o, s) => c.transform.fold(f) andThen s.transform.fold(f)
+        case Union(l, r) => l.transform.fold(f) andThen r.transform.fold(f)
+        case Block(stmts) => stmts.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f))
+        case DropTable(t) => t.transform.fold(f)
+        case CreateTable(t, s) => t.transform.fold(f)
+      composed(acc)        
 
     inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] =
       both(f, [x] => (i: T[x]) => i)
@@ -315,8 +371,8 @@ enum Node[L[_], T[_]]:
             r.transform.both(fl, ft)
           )
         case Block(stmts) => Block(stmts.map(_.transform.both(fl, ft)))
-        case DropTable(n) => DropTable(fl(n))
-        case CreateTable(n,specs) => CreateTable(fl(n), specs.map {
+        case DropTable(t) => DropTable(t.transform.both(fl, ft))
+        case CreateTable(t,specs) => CreateTable(t.transform.both(fl, ft), specs.map(_.map {
           case CreateSpec.ColDef(name, tpe, mods) =>
             CreateSpec.ColDef(name, ft(tpe), mods.map{
               case ColMod.NotNull() => ColMod.NotNull()
@@ -327,7 +383,7 @@ enum Node[L[_], T[_]]:
           case CreateSpec.FK(l, tname, r, od) => CreateSpec.FK(l, fl(tname), r, od)
           case CreateSpec.Index(is) => CreateSpec.Index(is)
           case CreateSpec.Unique(is) => CreateSpec.Unique(is)
-        })
+        }))
 
 object Node:
   inline def parse[L[_], T[_]](sc: StringContext)(
@@ -536,10 +592,11 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
     def columnSpec: Parser[CreateSpec[L,T]] = fk | pk | index | unique | columnDef
     def apply(v: Input): ParseResult[N] =
-      def parser = kw.create ~> kw.table ~> embedded.table ~ parens(true)(rep1sep(columnSpec, kw.`,`)) ^^ {case Table(n,_) ~ specs => CreateTable(n,specs)}
+      // def specs: Parser[CreateSpec[L,T]] = parens(true)(rep1sep(columnSpec, kw.`,`))
+      def parser: Parser[N] = kw.create ~> kw.table ~> embedded.table /*~ specs*/ ^^ {case t => CreateTable(t, None)}
       parser(v)
 
-  def dropQuery: Parser[N] = kw.drop ~> kw.table ~> embedded.table ^^ {case Table(n,_) => DropTable(n)}
+  def dropQuery: Parser[N] = kw.drop ~> kw.table ~> embedded.table ^^ {case t => DropTable(t)}
   def block: Parser[N] =
     def written = rep1sep(query, kw.`;`) ^^ {
       case Nil      => Block(Nil)

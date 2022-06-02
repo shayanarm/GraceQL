@@ -45,11 +45,19 @@ trait JDBCQueryContext[V, S[+X] <: Iterable[X]]
 
 enum Modifier:
   case PrimaryKey extends Modifier
-  case ForeignKey[T](field: String) extends Modifier
+  case ForeignKey[T](field: String, onDelete: compiler.OnDelete = compiler.OnDelete.Cascade) extends Modifier
   case AutoIncrement extends Modifier
   case Unique extends Modifier
-  case Indexed extends Modifier
+  case Indexed(order: compiler.Order = compiler.Order.Asc) extends Modifier
+
+object Modifier:
+  type Index = Indexed
+  //Synonym for Modifier.Indexed
+  object Index:
+    def apply(order: compiler.Order = compiler.Order.Asc): Modifier = Indexed(order)
+    def unapply(mod: Modifier): Option[compiler.Order] = mod match
+      case Indexed(o) => Some(o)
+      case _ => None
 
 class Name(val name: String) extends scala.annotation.StaticAnnotation
-class Modifiers(val modifiers: Set[Modifier])
-    extends scala.annotation.StaticAnnotation
+class Modifiers(val modifiers: Modifier*) extends scala.annotation.StaticAnnotation

@@ -7,16 +7,16 @@ import scala.quoted.*
 
 object Compiler extends VendorTreeCompiler[MySQL]:
   import Node.*
-  protected def print(tree: Node[Expr, Type])(using q: Quotes): Expr[String] =
+  protected def binary(tree: Node[Expr, Type])(using q: Quotes): Expr[String] =
     tree match
-      case DropTable(name) => '{"DROP TABLE " + $name}
-      case CreateTable(name, specs) => 
+      case DropTable(table) => '{"DROP TABLE " + ${ binary(table) }}
+      case CreateTable(table, Some(specs)) => 
         val specsStr = specs.map {
           case CreateSpec.ColDef(colName ,tpe, mods) => 
             val typeStr = q.reflect.TypeRepr.of(using tpe).show(using q.reflect.Printer.TypeReprShortCode)
             val modsStr = mods.map {
               case ColMod.AutoInc() => '{"AUTO_INCREMENT"}
-              case ColMod.Default(v) => '{"DEFAULT " + ${print(Literal(v))} }
+              case ColMod.Default(v) => '{"DEFAULT " + ${binary(Literal(v))} }
               case ColMod.NotNull() => '{"NOT NULL"}
             }
             '{ ${Expr(colName)} + " " + ${Expr(typeStr)} + ${Expr.ofList(modsStr)}.mkString(" ", " ", "")}
@@ -36,7 +36,7 @@ object Compiler extends VendorTreeCompiler[MySQL]:
             '{"INDEX (" + ${ Expr.ofList(indicesStr) }.mkString(", ") + ")"}
         }
 
-        '{"CREATE TABLE " + $name + " (" + ${ Expr.ofList(specsStr) }.mkString(", ") + ")"}      
+        '{"CREATE TABLE " + ${ binary(table) } + " (" + ${ Expr.ofList(specsStr) }.mkString(", ") + ")"}      
       case Select(
             distinct,
             columns,
@@ -49,13 +49,13 @@ object Compiler extends VendorTreeCompiler[MySQL]:
             limit
           ) =>
         val distinctWords = if distinct then List('{ "DISTINCT" }) else Nil
-        val columnsWords = List(print(columns))
+        val columnsWords = List(binary(columns))
         val fromWords = from match
           case sub @ As(s: Select[_, _], name) =>
-            List('{ "(" + ${ print(s) } + ")" }, '{ "AS" }, Expr(name))
+            List('{ "(" + ${ binary(s) } + ")" }, '{ "AS" }, Expr(name))
           case sub: Select[_, _] =>
-            List('{ "(" + ${ print(from) } + ")" })
-          case i => List(print(i))
+            List('{ "(" + ${ binary(from) } + ")" })
+          case i => List(binary(i))
         val joinWords = joins.map {case (jt, src, on) =>
           val jtStr = jt match
             case JoinType.Inner => "INNER"
@@ -63,18 +63,18 @@ object Compiler extends VendorTreeCompiler[MySQL]:
             case JoinType.Right => "RIGHT"
             case JoinType.Full => "FULL"
             case JoinType.Cross => "CROSS"
-          List(Expr(jtStr), Expr("JOIN"), print(src), Expr("ON"), print(on))
+          List(Expr(jtStr), Expr("JOIN"), binary(src), Expr("ON"), binary(on))
         }.flatten
-        val whereWords = where.fold(Nil)(i => List('{ "WHERE" }, print(i)))
+        val whereWords = where.fold(Nil)(i => List('{ "WHERE" }, binary(i)))
         val groupByWords = groupBy.fold(List.empty) { case (cs, h) =>
-          List(Expr("GROUP"), Expr("BY"), print(cs)) ++ h.map(print).toList
+          List(Expr("GROUP"), Expr("BY"), binary(cs)) ++ h.map(binary).toList
         }
         val orderByWords = orderBy match
           case Nil => Nil
           case cs =>
             val ord = cs.map {
-              case (c, Order.Asc)  => '{ ${ print(c) } + " ASC" }
-              case (c, Order.Desc) => '{ ${ print(c) } + " DESC" }
+              case (c, Order.Asc)  => '{ ${ binary(c) } + " ASC" }
+              case (c, Order.Desc) => '{ ${ binary(c) } + " DESC" }
             }
             List(
               Expr("ORDER"),
@@ -82,9 +82,9 @@ object Compiler extends VendorTreeCompiler[MySQL]:
               '{ ${ Expr.ofSeq(ord) }.mkString(", ") }
             )
         val limitWords =
-          limit.fold(List.empty)(l => List(Expr("LIMIT"), print(l)))
+          limit.fold(List.empty)(l => List(Expr("LIMIT"), binary(l)))
         val offsetWords =
-          offset.fold(List.empty)(o => List(Expr("OFFSET"), print(o)))
+          offset.fold(List.empty)(o => List(Expr("OFFSET"), binary(o)))
         val words =
           List('{ "SELECT" }) ++ distinctWords ++ columnsWords ++ List('{
             "FROM"
@@ -92,13 +92,13 @@ object Compiler extends VendorTreeCompiler[MySQL]:
 
         '{ ${ Expr.ofList(words) }.mkString(" ") }
       case Block(stmts) =>
-        '{ ${ Expr.ofSeq(stmts.map(print)) }.map(q => s"$q;").mkString(" ") }
+        '{ ${ Expr.ofSeq(stmts.map(binary)) }.map(q => s"$q;").mkString(" ") }
       case Star()       => '{ "*" }
-      case Tuple(trees) => '{ ${ Expr.ofSeq(trees.map(print)) }.mkString(", ") }
-      case As(tree, name) => '{ ${ print(tree) } + " AS " + ${ Expr(name) } }
+      case Tuple(trees) => '{ ${ Expr.ofSeq(trees.map(binary)) }.mkString(", ") }
+      case As(tree, name) => '{ ${ binary(tree) } + " AS " + ${ Expr(name) } }
       case Ref(name) => Expr(name)
       case Column(name) => Expr(name)
-      case SelectCol(n, c) => '{${print(n)} + "." + ${print(c)}}
+      case SelectCol(n, c) => '{${binary(n)} + "." + ${binary(c)}}
       case Table(name, _) => name
       case Literal(value) =>
         value.asExprOf[scala.Any] match
@@ -109,8 +109,8 @@ object Compiler extends VendorTreeCompiler[MySQL]:
         val encodedArgs = args.map { a =>
           a match
             case Literal(_) | SelectCol(_, _) | FunApp(Func.Custom(_), _, _) | Star() =>
-              print(a)
-            case _ => '{ "(" + ${ print(a) } + ")" }
+              binary(a)
+            case _ => '{ "(" + ${ binary(a) } + ")" }
         }
         (func, encodedArgs) match
           case (Func.BuiltIn(Symbol.Eq), List(l, r)) =>
@@ -139,7 +139,7 @@ object Compiler extends VendorTreeCompiler[MySQL]:
             }
       case Cast(n, tpe) => 
         val typeStr = q.reflect.TypeRepr.of(using tpe).show(using q.reflect.Printer.TypeReprShortCode)
-        '{"CAST(" + ${print(n)} + " AS " + ${Expr(typeStr)} + ")"}     
+        '{"CAST(" + ${binary(n)} + " AS " + ${Expr(typeStr)} + ")"}     
 
   override protected def adaptSupport[S[+X] <: Iterable[X], A](
       tree: Node[Expr, Type]

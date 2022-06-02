@@ -22,7 +22,7 @@ trait VendorTreeCompiler[V]:
       case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
         Delegate[S].compile[A](body)
 
-  protected def print(tree: Node[Expr, Type])(using Quotes): Expr[String]
+  protected def binary(tree: Node[Expr, Type])(using Quotes): Expr[String]
 
   protected def adaptSupport[S[+X] <: Iterable[X], A](tree: Node[Expr, Type])(using q: Quotes, ts: Type[S], ta: Type[A]): Node[Expr, Type] =
     tree
@@ -68,18 +68,21 @@ trait VendorTreeCompiler[V]:
         appliedToPlaceHolder[Q, A] andThen
           preprocess[A] andThen
           toNative(Context()) andThen
+          typeCheck andThen
           adaptSupport[S,A] andThen
           toDBIO[A]
       pipe(expr)
+
+    protected def typeCheck(tree: Node[Expr, Type])(using q: Quotes): Node[Expr, Type] = tree
     protected def toDBIO[A](
         tree: Node[Expr, Type]
     )(using ta: Type[A]): Expr[DBIO[A]] =
       import Node.*
       (ta, tree) match
         case ('[Unit], _: DropTable[_,_]) => 
-          '{ DBIO.Statement(${ print(tree) }) }.asExprOf[DBIO[A]]
+          '{ DBIO.Statement(${ binary(tree) }) }.asExprOf[DBIO[A]]
         case _ => 
-          '{ DBIO.Query(${ print(tree) }, (rs) => ???) }   
+          '{ DBIO.Query(${ binary(tree) }, (rs) => ???) }   
 
 object VendorTreeCompiler:
   def preprocess[A](
@@ -130,6 +133,8 @@ abstract class CompileModule[V, S[+X] <: Iterable[X]](using
       val ts: Type[S]
   ):
 
+  import q.reflect.*
+
   type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
   given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
 
@@ -140,4 +145,14 @@ abstract class CompileModule[V, S[+X] <: Iterable[X]](using
 
   protected def withImplicit[P, A](p: Expr[P])(f: Expr[P ?=> A])(using Quotes, Type[P], Type[A]): Expr[A] = 
     VendorTreeCompiler.preprocess('{$f(using $p)})
+
+  protected def assertPassableAsTable[A](using Type[A]): Unit =
+    val errorMsg = Expr.summon[SQLMirror.Of[A]] match
+              case Some(mirr) => 
+                ()
+              case None => instanceNotFound[SQLMirror.Of[A]]
+
+  protected def instanceNotFound[T](using Type[T]): Unit = 
+    report.errorAndAbort(s"Could not obtain an instance for ${Type.show[T]}")
+
 

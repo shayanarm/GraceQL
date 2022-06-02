@@ -31,8 +31,19 @@ class DDLSupport[V, S[+X] <: Iterable[X]](using q: Quotes, tv: Type[V], ts: Type
             ($c: Q).create(
               $table: Table[V, a]
             )()
-          } => 
-            val trep = TypeRepr.of[a]
-            trep.typeSymbol.caseFields.foreach(println)
-            ???                      
+          } => recurse(ctx)(withImplicit(c)('{ _ ?=>
+            native"create table ${$table.lift}".unlift
+          }))          
+      // case '{
+      //       ($c: Q).create(
+      //         $table: Table[V, a]
+      //       )()
+      //     } => 
+      //       Expr.summon[SQLEncoding[a, Row.type]] match
+      //         case None => report.errorAndAbort(s"Table type '${Type.show[a]}' must implement the ${Type.show[SQLRow]} instance")                        
+      //         case _ => 
+      //           assertPassableAsTable[a]
+      //           val mirr = Expr.summon[SQLMirror.Of[a]].get
+      //           ???
+
     }
