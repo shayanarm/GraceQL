@@ -32,6 +32,8 @@ object SQLEncoding:
   // given jsonArrayIterable[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[Iterable, A] = SQLJsonArray(Iterable)
   given SQLBase[Int] with {}
   given SQLBase[String] with {}    
+  given option[A, E <: Encodings](using ta: SQLEncoding[A, E]): SQLEncoding[Option[A], E](ta.encoding) with {}
+  given tuples[T <: Tuple]: SQLEncoding[T, Row.type](Row) with {}
 
 abstract class SQLBase[A] extends SQLEncoding[A, Base.type](Base)
 object SQLBase

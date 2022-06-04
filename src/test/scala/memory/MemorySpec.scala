@@ -17,6 +17,8 @@ import flatspec._
 import matchers._
 import java.util.concurrent.TimeUnit
 
+case class User(name: String = "sdf", age: Int)    
+
 class MemorySpec extends AnyFlatSpec with should.Matchers {
 
     val ref = IterRef(1,2,3)

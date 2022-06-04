@@ -7,7 +7,7 @@ import graceql.context.jdbc.compiler.*
 import graceql.quoted.CompileOps
 import scala.annotation.targetName
 
-class DDLSupport[V, S[+X] <: Iterable[X]](using q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
+class DDLSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
   def apply(
       recurse: Context => Expr[Any] => Node[Expr, Type],
       nameGen: () => String
@@ -33,17 +33,5 @@ class DDLSupport[V, S[+X] <: Iterable[X]](using q: Quotes, tv: Type[V], ts: Type
             )()
           } => recurse(ctx)(withImplicit(c)('{ _ ?=>
             native"create table ${$table.lift}".unlift
-          }))          
-      // case '{
-      //       ($c: Q).create(
-      //         $table: Table[V, a]
-      //       )()
-      //     } => 
-      //       Expr.summon[SQLEncoding[a, Row.type]] match
-      //         case None => report.errorAndAbort(s"Table type '${Type.show[a]}' must implement the ${Type.show[SQLRow]} instance")                        
-      //         case _ => 
-      //           assertPassableAsTable[a]
-      //           val mirr = Expr.summon[SQLMirror.Of[a]].get
-      //           ???
-
+          }))
     }

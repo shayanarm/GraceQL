@@ -4,11 +4,9 @@ import scala.quoted.*
 import graceql.core.*
 import graceql.context.jdbc.*
 import graceql.quoted.CompileOps
-import scala.annotation.targetName
 
 trait VendorTreeCompiler[V]:
   self =>
-  import VendorTreeCompiler.*
   def compile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
   )(using
@@ -28,10 +26,10 @@ trait VendorTreeCompiler[V]:
     tree
     
   class Delegate[S[+X] <: Iterable[X]](using
-      val q: Quotes,
+      override val q: Quotes,
       tv: Type[V],
       ts: Type[S]
-  ):
+  ) extends Commons(using q):
     import CompileOps.*
     import q.reflect.{Tree => _, Select => _, Block => _, Literal => SLiteral, *}
     type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
@@ -57,7 +55,7 @@ trait VendorTreeCompiler[V]:
     ): Expr[DBIO[A]] =
 
       val fallback: PartialFunction[Expr[Any], Node[Expr, Type]] = { case e =>
-        report.errorAndAbort(s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}", e.asTerm.pos)
+        report.errorAndAbort(s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}")
       }
       def toNative(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
         partials.foldRight(fallback) { (i, c) =>
@@ -73,7 +71,22 @@ trait VendorTreeCompiler[V]:
           toDBIO[A]
       pipe(expr)
 
-    protected def typeCheck(tree: Node[Expr, Type])(using q: Quotes): Node[Expr, Type] = tree
+    object checks:
+      def schemas(tree: Node[Expr, Type]): Unit = 
+        tree.fold[List[String]](Nil)(msgs => {
+          case Node.Table(_, tpe): Node.Table[Expr, Type, a] => 
+            schemaErrors[a](using tpe).toList ++ msgs 
+        }) match
+          case Nil => ()
+          case errs => report.errorAndAbort(errs.mkString("\n"))        
+
+    protected def typeCheck(tree: Node[Expr, Type]): Node[Expr, Type] = 
+      checks.schemas(tree)
+      tree.transform.pre{
+        case Node.CreateTable(t@ Node.Table(_, tpe), None) => tpe match
+          case '[a] => Node.CreateTable(t, Some(FieldSpec.forAST(require.fieldSpecs[a])))
+      }  
+
     protected def toDBIO[A](
         tree: Node[Expr, Type]
     )(using ta: Type[A]): Expr[DBIO[A]] =
@@ -83,18 +96,6 @@ trait VendorTreeCompiler[V]:
           '{ DBIO.Statement(${ binary(tree) }) }.asExprOf[DBIO[A]]
         case _ => 
           '{ DBIO.Query(${ binary(tree) }, (rs) => ???) }   
-
-object VendorTreeCompiler:
-  def preprocess[A](
-      e: Expr[A]
-  )(using q: Quotes, ta: Type[A]): Expr[A] =
-    import q.reflect.*
-    import CompileOps.*
-    val pipe =
-      inlineDefs andThen
-        betaReduceAll andThen
-        inlineDefs
-    pipe(e.asTerm).asExprOf[A]              
 
 class Context(
     val refMap: Map[Any, String] = Map.empty[Any, String]
@@ -128,10 +129,10 @@ class Context(
     refMap(tree)
 
 abstract class CompileModule[V, S[+X] <: Iterable[X]](using
-      val q: Quotes,
+      override val q: Quotes,
       val tv: Type[V],
       val ts: Type[S]
-  ):
+  ) extends Commons(using q):
 
   import q.reflect.*
 
@@ -142,17 +143,5 @@ abstract class CompileModule[V, S[+X] <: Iterable[X]](using
       recurse: Context => Expr[Any] => Node[Expr, Type],
       nameGen: () => String
   )(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]]
-
-  protected def withImplicit[P, A](p: Expr[P])(f: Expr[P ?=> A])(using Quotes, Type[P], Type[A]): Expr[A] = 
-    VendorTreeCompiler.preprocess('{$f(using $p)})
-
-  protected def assertPassableAsTable[A](using Type[A]): Unit =
-    val errorMsg = Expr.summon[SQLMirror.Of[A]] match
-              case Some(mirr) => 
-                ()
-              case None => instanceNotFound[SQLMirror.Of[A]]
-
-  protected def instanceNotFound[T](using Type[T]): Unit = 
-    report.errorAndAbort(s"Could not obtain an instance for ${Type.show[T]}")
 
 

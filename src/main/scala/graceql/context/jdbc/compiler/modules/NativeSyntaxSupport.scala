@@ -7,7 +7,7 @@ import graceql.context.jdbc.compiler.*
 import graceql.quoted.CompileOps
 import scala.annotation.targetName
 
-class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
+class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
   def apply(
       recurse: Context => Expr[Any] => Node[Expr, Type],
       nameGen: () => String
@@ -43,15 +43,15 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using q: Quotes, tv: Type[V],
           case e =>
             report.errorAndAbort(
               "Native code must only be provided using the `lift` method or the `native` interpolator",
-              e.asTerm.pos
+              e
             )
       case '{ $i: t } if ctx.isRegisteredIdent(i.asTerm) =>
         Node.Ref(ctx.refMap(i.asTerm))
       case '{ $a: t } if ctx.literalEncodable(a) =>
         a match
           case '{$c: Class[t]} => Node.TypeLit(Type.of[t])
-          case '{ $v: graceql.context.jdbc.Table[V, a] } =>
-            Node.Table[Expr, Type, a]('{ $v.name }, Type.of[a])
+          case '{ $v: graceql.context.jdbc.Table[V, a] } =>            
+            Node.Table[Expr, Type, a](Expr(require.tableName[a]), Type.of[a])
           case _ =>
             Node.Literal[Expr, Type, t](a)
     }

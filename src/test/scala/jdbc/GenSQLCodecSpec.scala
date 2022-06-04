@@ -18,23 +18,13 @@ import java.util.concurrent.TimeUnit
 
 class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   import Modifier.*
+
+  @Name("users")
   case class User(id: Int, name: String) derives SQLRow
+
+  val users: Table[GenSQL, User] = Table[GenSQL, User]()  
   
-  val users: Table[GenSQL, User] = Table[GenSQL, User]("users")  
 
-  case class Post(
-    @Modifiers(PrimaryKey, AutoIncrement)
-    id: Int, 
-    @Name("user_id") 
-    @Modifiers(ForeignKey[users.type]("id", OnDelete.Cascade), Unique) 
-    userId: Int,
-    @Modifiers(Indexed(Order.Asc)) 
-    content: String,
-    @Modifiers(Indexed(Order.Desc))
-    priority: Option[Int] = Some(0)
-  ) derives SQLRow
-
-  val posts: Table[GenSQL, Post] = Table[GenSQL, Post]("posts")
 
   inline def parseAssert[A](
       inline src: Queryable[[x] =>> Table[GenSQL, x], Iterable, DBIO] ?=> A
@@ -281,15 +271,15 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-    // @Modifiers(PrimaryKey, AutoIncrement)
-    // id: Int, 
-    // @Name("user_id") 
-    // @Modifiers(ForeignKey[users.type]("id", OnDelete.Cascade), Unique) 
-    // userId: Int,
-    // @Modifiers(Indexed(Order.Desc)) 
-    // content: String, 
-    // @Modifiers(Indexed(Order.Asc))     
-    // priority: Option[Int] = Some(0)  
+  @Name("posts")
+  case class Post(
+    id: Int @Modifiers(PrimaryKey, AutoIncrement), 
+    userId: Int @Name("user_id") @Modifiers(ForeignKey(classOf[User], "id", OnDelete.Cascade), Unique),   
+    content: String @Modifiers(Indexed(Order.Desc)),
+    priority: Option[Int] @Modifiers(Indexed(Order.Asc)) = Some(0)
+  ) derives SQLRow
+
+  val posts: Table[GenSQL, Post] = Table[GenSQL, Post]()
 
   it should "parse a comprehensive CREATE TABLE statement" in {
     parseAssert {

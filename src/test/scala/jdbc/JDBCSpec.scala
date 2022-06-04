@@ -26,7 +26,9 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
 ) extends AnyFlatSpec
     with should.Matchers with BeforeAndAfter {
 
+  @Name("users")
   case class User(id: Int, name: String) derives SQLRow
+  @Name("posts")
   case class Post(id: Int, userId: Int) derives SQLRow
 
   inline def runTests()(using ctx: JDBCQueryContext[V, S]) =
@@ -41,8 +43,8 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       connection.close()
     }
 
-    val users: Table[V, User] = Table[V, User]("users")
-    val posts: Table[V, Post] = Table[V, Post]("posts")
+    val users: Table[V, User] = Table[V, User]()
+    val posts: Table[V, Post] = Table[V, Post]()
 
     // s"""
     // Using the high-level api to carry out various commands

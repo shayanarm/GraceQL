@@ -5,6 +5,7 @@ import scala.util.parsing.combinator._
 import scala.util.Try
 import graceql.core.GraceException
 import scala.util.matching.Regex
+import scala.quoted.*
 
 enum JoinType:
   case Inner extends JoinType
@@ -16,6 +17,15 @@ enum JoinType:
 enum Order:
   case Asc extends Order
   case Desc extends Order
+
+object Order:
+  given FromExpr[Order] with
+    def unapply(expr: Expr[Order])(using q: Quotes): Option[Order] = 
+      import q.reflect.*
+      expr match
+        case '{Asc} => Some(Asc)
+        case '{Desc} => Some(Desc)
+        case _ => None  
 
 enum Func:
   case BuiltIn(symbol: Symbol) extends Func
@@ -81,9 +91,20 @@ enum OnDelete:
   case SetNull extends OnDelete
   case Restrict extends OnDelete
 
+object OnDelete:
+  given FromExpr[OnDelete] with
+    def unapply(expr: Expr[OnDelete])(using q: Quotes): Option[OnDelete] = 
+      import q.reflect.*
+      expr match
+        case '{Cascade} => Some(Cascade)
+        case '{SetDefault} => Some(SetDefault)
+        case '{SetNull} => Some(SetNull)
+        case '{Restrict} => Some(Restrict)
+        case _ => None     
+
 
 enum Node[L[_], T[_]]:
-  node =>
+  self =>
   case Literal[L[_], T[_], A](value: L[A]) extends Node[L, T]
   case Select[L[_], T[_]](
       distinct: Boolean,
@@ -129,261 +150,271 @@ enum Node[L[_], T[_]]:
   case Block[L[_], T[_]](stmts: List[Node[L, T]]) extends Node[L, T]
   case DropTable[L[_], T[_]](table: Node[L, T]) extends Node[L, T]
   case CreateTable[L[_], T[_]](table: Node[L, T], specs: Option[List[CreateSpec[L,T]]]) extends Node[L, T]
+  
+  protected def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
+    val g = f.orElse { case t => t }
+    val node = g(this)
+    node match
+      case Literal(_) => node
+      case Select(
+            distinct,
+            columns,
+            from,
+            joins,
+            where,
+            groupBy,
+            orderBy,
+            offset,
+            limit
+          ) =>
+        Select(
+          distinct,
+          columns.pre(f),
+          from.pre(f),
+          joins.map { case (jt, s, o) =>
+            (jt, s.pre(f), o.pre(f))
+          },
+          where.map(_.pre(f)),
+          groupBy.map { case (es, h) =>
+            (es.pre(f), h.map(_.pre(f)))
+          },
+          orderBy.map { case (t, o) => (t.pre(f), o) },
+          offset.map(_.pre(f)),
+          limit.map(_.pre(f))
+        )
+      case Star()          => node
+      case Column(_)       => node
+      case Tuple(elems)    => Tuple(elems.map(_.pre(f)))
+      case Table(_, _)     => node
+      case Values(_)       => node
+      case Dual()          => node
+      case As(t, n)        => As(t.pre(f), n)
+      case Ref(_)          => node
+      case SelectCol(t, c) => SelectCol(t.pre(f), c.pre(f))
+      case FunApp(n, args, tpe) =>
+        FunApp(n, args.map(_.pre(f)), tpe)
+      case TypeLit(_)      => node
+      case Cast(t, tpe)    => Cast(t.pre(f), tpe)
+      case TypeAnn(t, tpe) => TypeAnn(t.pre(f), tpe)
+      case Null()          => node
+      case Any(c, o, s) =>
+        Any(c.pre(f), o, s.pre(f))
+      case All(c, o, s) =>
+        All(c.pre(f), o, s.pre(f))
+      case Union(l, r) =>
+        Union(l.pre(f), r.pre(f))
+      case Block(stmts) => Block(stmts.map(_.pre(f)))
+      case DropTable(t) => DropTable(t.pre(f))
+      case CreateTable(t, s) => CreateTable(t.pre(f), s)
+
+  protected def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
+    val g = f.orElse { case t => t }
+    val n = this match
+      case Literal(_) => this
+      case Select(
+            distinct,
+            columns,
+            from,
+            joins,
+            where,
+            groupBy,
+            orderBy,
+            limit,
+            offset
+          ) =>
+        Select(
+          distinct,
+          columns.post(f),
+          from.post(f),
+          joins.map { case (jt, s, o) =>
+            (jt, s.post(f), o.post(f))
+          },
+          where.map(_.post(f)),
+          groupBy.map { case (es, h) =>
+            (es.post(f), h.map(_.post(f)))
+          },
+          orderBy.map { case (t, o) => (t.post(f), o) },
+          offset.map(_.post(f)),
+          limit.map(_.post(f))
+        )
+      case Star()          => this
+      case Column(_)       => this
+      case Tuple(elems)    => Tuple(elems.map(_.post(f)))
+      case Table(_, _)     => this
+      case Values(_)       => this
+      case Dual()          => this
+      case As(t, n)        => As(t.post(f), n)
+      case Ref(_)          => this
+      case SelectCol(t, c) => SelectCol(t.post(f), c.pre(f))
+      case FunApp(n, args, tpe) =>
+        FunApp(n, args.map(_.post(f)), tpe)
+      case TypeLit(_)      => this
+      case Cast(t, tpe)    => Cast(t.post(f), tpe)
+      case TypeAnn(t, tpe) => TypeAnn(t.post(f), tpe)
+      case Null()          => this
+      case Any(c, o, s) =>
+        Any(c.post(f), o, s.post(f))
+      case All(c, o, s) =>
+        All(c.post(f), o, s.post(f))
+      case Union(l, r) =>
+        Union(l.post(f), r.post(f))
+      case Block(stmts) => Block(stmts.map(_.post(f)))
+      case DropTable(t) => DropTable(t.post(f))
+      case CreateTable(t, s) => CreateTable(t.post(f), s)
+    g(n)
+
+  protected inline def fold[A](f: A => PartialFunction[Node[L, T], A]): A => A = initial => fold(initial)(f)
+  def fold[A](initial: A)(f: A => PartialFunction[Node[L, T], A]): A =
+    inline def composed: A => A = this match
+      case Literal(_) => identity
+      case Select(
+            distinct,
+            columns,
+            from,
+            joins,
+            where,
+            groupBy,
+            orderBy,
+            offset,
+            limit
+          ) =>
+        columns.fold(f) andThen 
+          from.fold(f) andThen
+          joins.foldLeft(identity[A]){case (z, (jt, s, o)) => 
+            z andThen s.fold(f) andThen o.fold(f)
+          } andThen
+          where.foldLeft(identity[A]){(z,i) => 
+            z andThen i.fold(f)
+          } andThen
+          groupBy.foldLeft(identity[A]){case (z, (es, h)) => 
+            z andThen es.fold(f) andThen h.foldLeft(identity[A]){(z2, i) => 
+              z2 andThen i.fold(f)
+            }
+          } andThen
+          orderBy.foldLeft(identity[A]){case (z, (t, o)) => 
+            z andThen t.fold(f)
+          } andThen 
+          offset.foldLeft(identity[A])((z,i) => z andThen i.fold(f)) andThen
+          limit.foldLeft(identity[A])((z,i) => z andThen i.fold(f))
+      case Star()          => identity
+      case Column(_)       => identity
+      case Tuple(elems)    => elems.foldLeft(identity[A])((z,i) => z andThen i.fold(f))
+      case Table(_, _)     => identity
+      case Values(_)       => identity
+      case Dual()          => identity
+      case As(t, n)        => t.fold(f)
+      case Ref(_)          => identity
+      case SelectCol(t, c) => t.fold(f) andThen c.fold(f)
+      case FunApp(n, args, tpe) => args.foldLeft(identity[A])((z,i) => z andThen i.fold(f)) 
+      case TypeLit(_)      => identity
+      case Cast(t, tpe)    => t.fold(f)
+      case TypeAnn(t, tpe) => t.fold(f)
+      case Null()          => identity
+      case Any(c, o, s) => c.fold(f) andThen s.fold(f)
+      case All(c, o, s) => c.fold(f) andThen s.fold(f)
+      case Union(l, r) => l.fold(f) andThen r.fold(f)
+      case Block(stmts) => stmts.foldLeft(identity[A])((z,i) => z andThen i.fold(f))
+      case DropTable(t) => t.fold(f)
+      case CreateTable(t, s) => t.fold(f)
+    val g = f(initial).orElse { case _ => initial }
+    (g andThen composed)(this)
+
+  inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] =
+    both(f, [x] => (i: T[x]) => i)
+  inline def types[T2[_]](f: [A] => T[A] => T2[A]): Node[L, T2] =
+    both([x] => (i: L[x]) => i, f)
+  protected def both[L2[_], T2[_]](
+      fl: [X] => L[X] => L2[X],
+      ft: [Y] => T[Y] => T2[Y]
+  ): Node[L2, T2] =
+    this match
+      case Literal(l) => Literal(fl(l))
+      case Select(
+            distinct,
+            columns,
+            from,
+            joins,
+            where,
+            groupBy,
+            orderBy,
+            offset,
+            limit
+          ) =>
+        Select(
+          distinct,
+          columns.both(fl, ft),
+          from.both(fl, ft),
+          joins.map { case (jt, s, on) =>
+            (jt, s.both(fl, ft), on.both(fl, ft))
+          },
+          where.map(_.both(fl, ft)),
+          groupBy.map { case (e, h) =>
+            (e.both(fl, ft), h.map(_.both(fl, ft)))
+          },
+          orderBy.map { case (t, o) => (t.both(fl, ft), o) },
+          offset.map(_.both(fl, ft)),
+          limit.map(_.both(fl, ft))
+        )
+      case Star()          => Star()
+      case Column(n)       => Column(n)
+      case Tuple(elems)    => Tuple(elems.map(_.both(fl, ft)))
+      case Table(n, t)     => Table(fl(n), ft(t))
+      case Values(ls)      => Values(fl(ls))
+      case Dual()          => Dual()
+      case As(t, n)        => As(t.both(fl, ft), n)
+      case Ref(n)          => Ref(n)
+      case SelectCol(t, c) => SelectCol(t.both(fl, ft), c.both(fl, ft))
+      case FunApp(n, args, tpe) =>
+        FunApp(
+          n,
+          args.map(_.both(fl, ft)),
+          tpe.map(i => ft(i))
+        )
+      case TypeLit(tpe)    => TypeLit(ft(tpe))
+      case Cast(t, tpe)    => Cast(t.both(fl, ft), ft(tpe))
+      case TypeAnn(t, tpe) => TypeAnn(t.both(fl, ft), ft(tpe))
+      case Null()          => Null()
+      case Any(c, o, s) =>
+        Any(
+          c.both(fl, ft),
+          o,
+          s.both(fl, ft)
+        )
+      case All(c, o, s) =>
+        All(
+          c.both(fl, ft),
+          o,
+          s.both(fl, ft)
+        )
+      case Union(l, r) =>
+        Union(
+          l.both(fl, ft),
+          r.both(fl, ft)
+        )
+      case Block(stmts) => Block(stmts.map(_.both(fl, ft)))
+      case DropTable(t) => DropTable(t.both(fl, ft))
+      case CreateTable(t,specs) => CreateTable(t.both(fl, ft), specs.map(_.map {
+        case CreateSpec.ColDef(name, tpe, mods) =>
+          CreateSpec.ColDef(name, ft(tpe), mods.map{
+            case ColMod.NotNull() => ColMod.NotNull()
+            case ColMod.AutoInc() => ColMod.AutoInc()
+            case ColMod.Default(v) => ColMod.Default(fl(v))
+          })            
+        case CreateSpec.PK(ks) => CreateSpec.PK(ks)
+        case CreateSpec.FK(l, tname, r, od) => CreateSpec.FK(l, fl(tname), r, od)
+        case CreateSpec.Index(is) => CreateSpec.Index(is)
+        case CreateSpec.Unique(is) => CreateSpec.Unique(is)
+      }))
 
   object transform:
-    def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
-      val g = f.orElse { case t => t }
-      g(node) match
-        case Literal(_) => node
-        case Select(
-              distinct,
-              columns,
-              from,
-              joins,
-              where,
-              groupBy,
-              orderBy,
-              offset,
-              limit
-            ) =>
-          Select(
-            distinct,
-            columns.transform.pre(f),
-            from.transform.pre(f),
-            joins.map { case (jt, s, o) =>
-              (jt, s.transform.pre(f), o.transform.pre(f))
-            },
-            where.map(_.transform.pre(f)),
-            groupBy.map { case (es, h) =>
-              (es.transform.pre(f), h.map(_.transform.pre(f)))
-            },
-            orderBy.map { case (t, o) => (t.transform.pre(f), o) },
-            offset.map(_.transform.pre(f)),
-            limit.map(_.transform.pre(f))
-          )
-        case Star()          => node
-        case Column(_)       => node
-        case Tuple(elems)    => Tuple(elems.map(_.transform.pre(f)))
-        case Table(_, _)     => node
-        case Values(_)       => node
-        case Dual()          => node
-        case As(t, n)        => As(t.transform.pre(f), n)
-        case Ref(_)          => node
-        case SelectCol(t, c) => SelectCol(t.transform.pre(f), c.transform.pre(f))
-        case FunApp(n, args, tpe) =>
-          FunApp(n, args.map(_.transform.pre(f)), tpe)
-        case TypeLit(_)      => node
-        case Cast(t, tpe)    => Cast(t.transform.pre(f), tpe)
-        case TypeAnn(t, tpe) => TypeAnn(t.transform.pre(f), tpe)
-        case Null()          => node
-        case Any(c, o, s) =>
-          Any(c.transform.pre(f), o, s.transform.pre(f))
-        case All(c, o, s) =>
-          All(c.transform.pre(f), o, s.transform.pre(f))
-        case Union(l, r) =>
-          Union(l.transform.pre(f), r.transform.pre(f))
-        case Block(stmts) => Block(stmts.map(_.transform.pre(f)))
-        case DropTable(t) => DropTable(t.transform.pre(f))
-        case CreateTable(t, s) => CreateTable(t.transform.pre(f), s)
-
-    def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
-      val g = f.orElse { case t => t }
-      val n = node match
-        case Literal(_) => node
-        case Select(
-              distinct,
-              columns,
-              from,
-              joins,
-              where,
-              groupBy,
-              orderBy,
-              limit,
-              offset
-            ) =>
-          Select(
-            distinct,
-            columns.transform.post(f),
-            from.transform.post(f),
-            joins.map { case (jt, s, o) =>
-              (jt, s.transform.post(f), o.transform.post(f))
-            },
-            where.map(_.transform.post(f)),
-            groupBy.map { case (es, h) =>
-              (es.transform.post(f), h.map(_.transform.post(f)))
-            },
-            orderBy.map { case (t, o) => (t.transform.post(f), o) },
-            offset.map(_.transform.post(f)),
-            limit.map(_.transform.post(f))
-          )
-        case Star()          => node
-        case Column(_)       => node
-        case Tuple(elems)    => Tuple(elems.map(_.transform.post(f)))
-        case Table(_, _)     => node
-        case Values(_)       => node
-        case Dual()          => node
-        case As(t, n)        => As(t.transform.post(f), n)
-        case Ref(_)          => node
-        case SelectCol(t, c) => SelectCol(t.transform.post(f), c.transform.pre(f))
-        case FunApp(n, args, tpe) =>
-          FunApp(n, args.map(_.transform.post(f)), tpe)
-        case TypeLit(_)      => node
-        case Cast(t, tpe)    => Cast(t.transform.post(f), tpe)
-        case TypeAnn(t, tpe) => TypeAnn(t.transform.post(f), tpe)
-        case Null()          => node
-        case Any(c, o, s) =>
-          Any(c.transform.post(f), o, s.transform.post(f))
-        case All(c, o, s) =>
-          All(c.transform.post(f), o, s.transform.post(f))
-        case Union(l, r) =>
-          Union(l.transform.post(f), r.transform.post(f))
-        case Block(stmts) => Block(stmts.map(_.transform.post(f)))
-        case DropTable(t) => DropTable(t.transform.post(f))
-        case CreateTable(t, s) => CreateTable(t.transform.post(f), s)
-      g(n)
-
-    protected inline def fold[A](f: A => PartialFunction[Node[L, T], A]): A => A = fold(_)(f)
-    def fold[A](initial: A)(f: A => PartialFunction[Node[L, T], A]): A =
-      val g = f(initial).orElse { case t => initial }
-      val acc = g(node)
-      val composed: A => A = node match
-        case Literal(_) => identity
-        case Select(
-              distinct,
-              columns,
-              from,
-              joins,
-              where,
-              groupBy,
-              orderBy,
-              offset,
-              limit
-            ) =>
-          columns.transform.fold(f) andThen 
-            from.transform.fold(f) andThen
-            joins.foldLeft(identity[A]){case (z, (jt, s, o)) => 
-              z andThen s.transform.fold(f) andThen o.transform.fold(f)
-            } andThen
-            where.foldLeft(identity[A]){(z,i) => 
-              z andThen i.transform.fold(f)
-            } andThen
-            groupBy.foldLeft(identity[A]){case (z, (es, h)) => 
-              z andThen es.transform.fold(f) andThen h.foldLeft(identity[A]){(z2, i) => 
-                z2 andThen i.transform.fold(f)
-              }
-            } andThen
-            orderBy.foldLeft(identity[A]){case (z, (t, o)) => 
-              z andThen t.transform.fold(f)
-            } andThen offset.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f)) andThen
-            limit.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f))
-        case Star()          => identity
-        case Column(_)       => identity
-        case Tuple(elems)    => elems.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f))
-        case Table(_, _)     => identity
-        case Values(_)       => identity
-        case Dual()          => identity
-        case As(t, n)        => t.transform.fold(f)
-        case Ref(_)          => identity
-        case SelectCol(t, c) => t.transform.fold(f) andThen c.transform.fold(f)
-        case FunApp(n, args, tpe) => args.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f)) 
-        case TypeLit(_)      => identity
-        case Cast(t, tpe)    => t.transform.fold(f)
-        case TypeAnn(t, tpe) => t.transform.fold(f)
-        case Null()          => identity
-        case Any(c, o, s) => c.transform.fold(f) andThen s.transform.fold(f)
-        case All(c, o, s) => c.transform.fold(f) andThen s.transform.fold(f)
-        case Union(l, r) => l.transform.fold(f) andThen r.transform.fold(f)
-        case Block(stmts) => stmts.foldLeft(identity[A])((z,i) => z andThen i.transform.fold(f))
-        case DropTable(t) => t.transform.fold(f)
-        case CreateTable(t, s) => t.transform.fold(f)
-      composed(acc)        
-
-    inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] =
-      both(f, [x] => (i: T[x]) => i)
-    inline def types[T2[_]](f: [A] => T[A] => T2[A]): Node[L, T2] =
-      both([x] => (i: L[x]) => i, f)
-    def both[L2[_], T2[_]](
-        fl: [X] => L[X] => L2[X],
-        ft: [Y] => T[Y] => T2[Y]
-    ): Node[L2, T2] =
-      node match
-        case Literal(l) => Literal(fl(l))
-        case Select(
-              distinct,
-              columns,
-              from,
-              joins,
-              where,
-              groupBy,
-              orderBy,
-              offset,
-              limit
-            ) =>
-          Select(
-            distinct,
-            columns.transform.both(fl, ft),
-            from.transform.both(fl, ft),
-            joins.map { case (jt, s, on) =>
-              (jt, s.transform.both(fl, ft), on.transform.both(fl, ft))
-            },
-            where.map(_.transform.both(fl, ft)),
-            groupBy.map { case (e, h) =>
-              (e.transform.both(fl, ft), h.map(_.transform.both(fl, ft)))
-            },
-            orderBy.map { case (t, o) => (t.transform.both(fl, ft), o) },
-            offset.map(_.transform.both(fl, ft)),
-            limit.map(_.transform.both(fl, ft))
-          )
-        case Star()          => Star()
-        case Column(n)       => Column(n)
-        case Tuple(elems)    => Tuple(elems.map(_.transform.both(fl, ft)))
-        case Table(n, t)     => Table(fl(n), ft(t))
-        case Values(ls)      => Values(fl(ls))
-        case Dual()          => Dual()
-        case As(t, n)        => As(t.transform.both(fl, ft), n)
-        case Ref(n)          => Ref(n)
-        case SelectCol(t, c) => SelectCol(t.transform.both(fl, ft), c.transform.both(fl, ft))
-        case FunApp(n, args, tpe) =>
-          FunApp(
-            n,
-            args.map(_.transform.both(fl, ft)),
-            tpe.map(i => ft(i))
-          )
-        case TypeLit(tpe)    => TypeLit(ft(tpe))
-        case Cast(t, tpe)    => Cast(t.transform.both(fl, ft), ft(tpe))
-        case TypeAnn(t, tpe) => TypeAnn(t.transform.both(fl, ft), ft(tpe))
-        case Null()          => Null()
-        case Any(c, o, s) =>
-          Any(
-            c.transform.both(fl, ft),
-            o,
-            s.transform.both(fl, ft)
-          )
-        case All(c, o, s) =>
-          All(
-            c.transform.both(fl, ft),
-            o,
-            s.transform.both(fl, ft)
-          )
-        case Union(l, r) =>
-          Union(
-            l.transform.both(fl, ft),
-            r.transform.both(fl, ft)
-          )
-        case Block(stmts) => Block(stmts.map(_.transform.both(fl, ft)))
-        case DropTable(t) => DropTable(t.transform.both(fl, ft))
-        case CreateTable(t,specs) => CreateTable(t.transform.both(fl, ft), specs.map(_.map {
-          case CreateSpec.ColDef(name, tpe, mods) =>
-            CreateSpec.ColDef(name, ft(tpe), mods.map{
-              case ColMod.NotNull() => ColMod.NotNull()
-              case ColMod.AutoInc() => ColMod.AutoInc()
-              case ColMod.Default(v) => ColMod.Default(fl(v))
-            })            
-          case CreateSpec.PK(ks) => CreateSpec.PK(ks)
-          case CreateSpec.FK(l, tname, r, od) => CreateSpec.FK(l, fl(tname), r, od)
-          case CreateSpec.Index(is) => CreateSpec.Index(is)
-          case CreateSpec.Unique(is) => CreateSpec.Unique(is)
-        }))
+    inline def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] = self.pre(f)
+    inline def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] = self.post(f)
+    inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] = self.lits(f)
+    inline def types[T2[_]](f: [A] => T[A] => T2[A]): Node[L, T2] = self.types(f)
+    inline def both[L2[_], T2[_]](
+          fl: [X] => L[X] => L2[X],
+          ft: [Y] => T[Y] => T2[Y]
+      ): Node[L2, T2] = self.both(fl, ft)        
 
 object Node:
   inline def parse[L[_], T[_]](sc: StringContext)(

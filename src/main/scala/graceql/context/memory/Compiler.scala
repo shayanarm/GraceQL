@@ -11,10 +11,10 @@ object Compiler {
         tree match
           case Select(i, call) if i.tpe <:< TypeRepr.of[Queryable[R,M,[x] =>> () => x]] =>
             call match
-              case "create" => report.errorAndAbort("`in-memory` context refs cannot be created", tree.pos)
-              case "delete" => report.errorAndAbort("`in-memory` context refs cannot be deleted", tree.pos)
-              case "native" => report.errorAndAbort("`in-memory` contexts do not support native syntax", tree.pos)
-              case "typed" => report.errorAndAbort("`in-memory` contexts do not support native syntax", tree.pos)
+              case "create" => report.errorAndAbort("`in-memory` context refs cannot be created", e)
+              case "delete" => report.errorAndAbort("`in-memory` context refs cannot be deleted", e)
+              case "native" => report.errorAndAbort("`in-memory` contexts do not support native syntax", e)
+              case "typed" => report.errorAndAbort("`in-memory` contexts do not support native syntax", e)
               case _ => super.traverseTree(tree)(owner)
           case _ => super.traverseTree(tree)(owner)      
     }.traverseTree(e.asTerm)(Symbol.spliceOwner)
