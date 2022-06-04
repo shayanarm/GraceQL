@@ -5,6 +5,7 @@ import java.sql.{Connection => JConnection}
 import java.sql.ResultSet
 import scala.deriving.*
 import scala.quoted.*
+import scala.annotation.meta.field
 
 final case class Table[V, +A]()
 
@@ -83,6 +84,7 @@ object Modifier:
           yield ForeignKey[Type, a](Type.of[a], r, d)
         case _ => None    
 
+@field
 class Name(val name: String) extends scala.annotation.StaticAnnotation
 object Name:
   given FromExpr[Name] with
@@ -92,6 +94,7 @@ object Name:
         case '{new Name($name)} => Expr.unapply(name).map(Name(_))
         case _ => None
 
+@field        
 class Modifiers(val values: Modifier*) extends scala.annotation.StaticAnnotation
 object Modifiers:
   given FromExpr[Modifiers] with

@@ -17,42 +17,40 @@ import flatspec._
 import matchers._
 import java.util.concurrent.TimeUnit
 
-case class User(name: String = "sdf", age: Int)    
-
 class MemorySpec extends AnyFlatSpec with should.Matchers {
 
-    val ref = IterRef(1,2,3)
+  val ref = IterRef(1, 2, 3)
 
-    """
+  """
     The IterRef context
-    """ should "not allow ref.create()" in {    
-            """
+    """ should "not allow ref.create()" in {
+    """
             query[IterRef,Seq] {
                 ref.create()
             }.run    
             """ shouldNot compile
-        }
+  }
 
-    it should "not allow ref.delete()" in {    
-            """
+  it should "not allow ref.delete()" in {
+    """
             query[IterRef,Seq] {
                 ref.delete()
             }.run    
             """ shouldNot compile
-        }
+  }
 
-    it should "not allow native syntax" in {    
-            """
+  it should "not allow native syntax" in {
+    """
             query[IterRef,Seq] {
                 native"foo"
             }.run    
             """ shouldNot compile
-        }
-    it should "not allow typing on native syntax" in {    
-            """
+  }
+  it should "not allow typing on native syntax" in {
+    """
             query[IterRef,Seq] {
                 (() => "sdf").typed[Int]
             }.run    
             """ shouldNot compile
-        }
+  }
 }

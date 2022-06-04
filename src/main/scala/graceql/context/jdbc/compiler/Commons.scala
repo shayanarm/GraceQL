@@ -20,16 +20,6 @@ trait Commons(using val q: Quotes) {
   ):
     def resolvedName = nameOverride.getOrElse(name).trim
   object FieldSpec:
-    def annotationFor[T <: scala.annotation.StaticAnnotation](symb: Symbol)(using Type[T], FromExpr[T]): Either[String, Option[T]] =
-      throw GraceException(symb.annotations.map(_.show(using Printer.TreeAnsiCode)).toString)
-      for
-        opt <- Right(symb.getAnnotation(TypeRepr.of[T].typeSymbol))
-        v <- opt.fold(Right(None)){term => 
-          Expr.unapply(term.asExprOf[T])
-          .toRight(s"Static annotation ${Type.show[T]} for field ${symb.toString} cannot be unlifted. Annotation must be constructed using literal values")
-          .map(Some(_))  
-        }
-      yield v      
     def forType[A](using Type[A]): Either[List[String], List[FieldSpec[_ <: Any]]] =
       val trep = TypeRepr.of[A]
       val caseFields = trep.typeSymbol.caseFields
@@ -162,6 +152,16 @@ trait Commons(using val q: Quotes) {
           s"Static annotation ${Type.show[Name]} for type ${Type.show[A]} cannot be unlifted. Annotation must be constructed using literal values"
         )
     yield ann.name
+
+  def annotationFor[T <: scala.annotation.StaticAnnotation](symb: Symbol)(using Type[T], FromExpr[T]): Either[String, Option[T]] =
+    for
+      opt <- Right(symb.getAnnotation(TypeRepr.of[T].typeSymbol))
+      v <- opt.fold(Right(None)){term => 
+        Expr.unapply(term.asExprOf[T])
+        .toRight(s"Static annotation ${Type.show[T]} for field ${symb.toString} cannot be unlifted. Annotation must be constructed using literal values")
+        .map(Some(_))  
+      }
+    yield v          
 
   def schemaErrors[A](using Type[A]): Option[String] =
     val r = for

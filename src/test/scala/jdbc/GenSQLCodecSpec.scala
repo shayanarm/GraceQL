@@ -273,10 +273,10 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   @Name("posts")
   case class Post(
-    id: Int @Modifiers(PrimaryKey, AutoIncrement), 
-    userId: Int @Name("user_id") @Modifiers(ForeignKey(classOf[User], "id", OnDelete.Cascade), Unique),   
-    content: String @Modifiers(Indexed(Order.Desc)),
-    priority: Option[Int] @Modifiers(Indexed(Order.Asc)) = Some(0)
+    @Modifiers(PrimaryKey, AutoIncrement) id: Int, 
+    @Name("user_id") @Modifiers(ForeignKey(classOf[User], "id", OnDelete.Cascade), Unique) userId: Int,   
+    @Modifiers(Indexed(Order.Desc)) content: String,
+    @Modifiers(Indexed(Order.Asc)) priority: Option[Int] = Some(0)
   ) derives SQLRow
 
   val posts: Table[GenSQL, Post] = Table[GenSQL, Post]()
@@ -285,7 +285,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"""create table ${posts.lift}""".unlift
     } {
-      "CREATE TABLE posts (id Int AUTO_INCREMENT NOT NULL, user_id Int NOT NULL, content String NOT NULL, priority Int, PRIMARY KEY (id), FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, INDEX (content DESC, priority ASC), UNIQUE (user_id))"
+      "CREATE TABLE posts (id Int AUTO_INCREMENT NOT NULL, user_id Int NOT NULL, content String NOT NULL, priority Int DEFAULT 0, PRIMARY KEY (id), FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, INDEX (content DESC, priority ASC), UNIQUE (user_id))"
     }
   }
 }

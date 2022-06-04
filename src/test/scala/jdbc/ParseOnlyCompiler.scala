@@ -76,6 +76,7 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
       case Table(name, _) => name
       case Literal(value) =>
         value.asExprOf[scala.Any] match
+          case '{$o: Option[a]} => '{ $o.fold("NULL"){i => ${binary(Literal('{i}))}} }
           case '{ $i: String } => '{ "\"" + $i + "\"" }
           case v               => '{ $v.toString }
       case Dual() => '{ "DUAL" }
