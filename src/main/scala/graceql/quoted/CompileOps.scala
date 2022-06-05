@@ -39,15 +39,19 @@ object CompileOps {
               case v @ ValDef(name, _, Some(b)) =>
                 if v.symbol.flags.is(Flags.Mutable) then
                   report.errorAndAbort(
-                    "Mutable variable declarations inside query are not supported.",
+                    "Mutable variable declarations inside queries are not supported.",
                     v.pos
                   )
                 else replace(name, b)(block)
               case d : DefDef =>
                 report.errorAndAbort(
-                  "Method definitions inside query are not supported.",
+                  "Method definitions inside queries are not supported.",
                   d.pos
                 )
+              case other => 
+                block match
+                  case Block(stmts, expr) => Block(h :: stmts, expr)
+                  case o => Block(List(h), o)              
           case other => other
     mapper.transformTerm(term)(Symbol.spliceOwner)
 

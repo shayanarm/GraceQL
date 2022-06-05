@@ -98,6 +98,8 @@ trait VendorTreeCompiler[V]:
           '{ DBIO.Statement(${ binary(tree) }) }.asExprOf[DBIO[A]]
         case ('[Unit], _: CreateTable[_,_]) => 
           '{ DBIO.Statement(${ binary(tree) }) }.asExprOf[DBIO[A]]
+        case ('[Unit], _: Block[_,_]) => 
+          '{ DBIO.Statement(${ binary(tree) }) }.asExprOf[DBIO[A]]
         case _ => 
           '{ DBIO.Query(${ binary(tree) }, (rs) => ???) }
 
@@ -128,6 +130,9 @@ trait VendorTreeCompiler[V]:
                 case (c, Order.Desc) => '{ ${Expr(c)} + " DESC" }
               }
               '{"INDEX (" + ${ Expr.ofList(indicesStr) }.mkString(", ") + ")"}
+            case CreateSpec.Unique(indices) =>
+              val indicesStr = indices.map(Expr(_))
+              '{"UNIQUE (" + ${ Expr.ofList(indicesStr) }.mkString(", ") + ")"}              
           }
 
           '{"CREATE TABLE " + ${ binary(table) } + " (" + ${ Expr.ofList(specsStr) }.mkString(", ") + ")"}      

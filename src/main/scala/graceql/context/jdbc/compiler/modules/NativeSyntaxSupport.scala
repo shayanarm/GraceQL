@@ -14,7 +14,7 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
   )(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
     import q.reflect.{
       Select => _,
-      Block => _,
+      Block => SBlock,
       Literal => SLiteral,
       *
     }
@@ -45,6 +45,13 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
               "Native code must only be provided using the `lift` method or the `native` interpolator",
               e
             )
+      // Multiple statement Support      
+      case '{$stmt: a; $expr: b} => 
+        val head = recurse(ctx)(stmt)
+        recurse(ctx)(expr) match
+          case Node.Block(ns) => Node.Block(head :: ns)
+          case n => Node.Block(List(head, n))  
+
       case '{ $i: t } if ctx.isRegisteredIdent(i.asTerm) =>
         Node.Ref(ctx.refMap(i.asTerm))
       case '{ $a: t } if ctx.literalEncodable(a) =>

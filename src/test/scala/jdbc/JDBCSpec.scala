@@ -27,10 +27,16 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     with should.Matchers
     with BeforeAndAfter {
 
-  @Name("users")
-  case class User(id: Int, name: String) derives SQLRow
-  @Name("posts")
-  case class Post(id: Int, userId: Int) derives SQLRow
+  @Name("record1s")
+  case class Record1(field1: Int, field2: String) derives SQLRow
+
+  @Name("record2s")
+  case class Record2(
+    @Modifiers(Modifier.PrimaryKey, Modifier.AutoIncrement) field1: Int, 
+    @Name("table_1_field1") @Modifiers(Modifier.ForeignKey(classOf[Record1], "field1", OnDelete.Cascade), Modifier.Unique) field2: Int,   
+    @Modifiers(Modifier.Indexed(Order.Desc)) field3: String,
+    @Modifiers(Modifier.Indexed(Order.Asc)) field4: Option[Int] = Some(0)
+  ) derives SQLRow
 
   inline def runTests()(using ctx: JDBCQueryContext[V, S]) =
     implicit var connection: ctx.Connection = null
@@ -44,21 +50,42 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       connection.close()
     }
 
-    val users: Table[V, User] = Table[V, User]()
-    val posts: Table[V, Post] = Table[V, Post]()
+    val record1s: Table[V, Record1] = Table[V, Record1]()
+    val record2s: Table[V, Record2] = Table[V, Record2]()
 
     s"""
-    The high-level api
-    """ should "create a simple table (without annotations)" in {
-      sql[V, S] {
-        users.create()
-      }.run
-    }
-    it should "drop a table" in {
+    The high-level JDBC context for $vendor
+    """ should "create and drop a simple table (without annotations)" in {
+   
       noException should be thrownBy {
         sql[V, S] {
-          users.delete()
+          record1s.create()
+        }.run
+        sql[V, S] {
+          record1s.delete()
         }.run
       }
     }
+
+    it should "allow for multi-statement DDL queries" in {
+      noException should be thrownBy {
+        sql[V, S] {
+          record1s.create()
+          record1s.delete()
+          record1s.create()
+          record1s.delete()          
+        }.run
+      }
+    }
+
+    // it should "create and drop a annotated tables" in {   
+    //   noException should be thrownBy {
+    //     sql[V, S] {
+    //       record1s.create()
+    //     }.run
+    //     sql[V, S] {
+    //       record1s.delete()
+    //     }.run
+    //   }
+    // }        
 }
