@@ -24,7 +24,8 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     val password: String,
     val driver: Driver
 ) extends AnyFlatSpec
-    with should.Matchers with BeforeAndAfter {
+    with should.Matchers
+    with BeforeAndAfter {
 
   @Name("users")
   case class User(id: Int, name: String) derives SQLRow
@@ -33,7 +34,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
 
   inline def runTests()(using ctx: JDBCQueryContext[V, S]) =
     implicit var connection: ctx.Connection = null
-    
+
     before {
       DriverManager.registerDriver(driver)
       connection = DriverManager.getConnection(url, user.orNull, password)
@@ -46,19 +47,18 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     val users: Table[V, User] = Table[V, User]()
     val posts: Table[V, Post] = Table[V, Post]()
 
-    // s"""
-    // Using the high-level api to carry out various commands
-    // """ should "drop a table" in {
-      // noException should be thrownBy {
-      //   sql[V, S] {
-      //     users.delete()
-      //   }.run
-      // }
-    // }
-
-    // it should "create a table" in {
-    //   sql[V, S] {
-    //     users.create()
-    //   }.run
-    // }
+    s"""
+    The high-level api
+    """ should "create a simple table (without annotations)" in {
+      sql[V, S] {
+        users.create()
+      }.run
+    }
+    it should "drop a table" in {
+      noException should be thrownBy {
+        sql[V, S] {
+          users.delete()
+        }.run
+      }
+    }
 }
