@@ -45,43 +45,57 @@ trait JDBCQueryContext[V, S[+X] <: Iterable[X]]
 
   final type Connection = JConnection
 
-enum Modifier:
-  case PrimaryKey extends Modifier
-  case ForeignKey[T[_], A](target: T[A],reference: String, onDelete: compiler.OnDelete = compiler.OnDelete.Cascade) extends Modifier
-  case AutoIncrement extends Modifier
-  case Unique extends Modifier
-  case Indexed(order: compiler.Order = compiler.Order.Asc) extends Modifier
 
-object Modifier:
-  type Index = Indexed
-  //Synonym for Modifier.Indexed
-  object Index:
-    def apply(order: compiler.Order = compiler.Order.Asc): Modifier = Indexed(order)
-    def unapply(mod: Modifier): Option[compiler.Order] = mod match
-      case Indexed(o) => Some(o)
-      case _ => None
-  given FromExpr[Modifier] with
-    def unapply(expr: Expr[Modifier])(using q: Quotes): Option[Modifier] = 
+sealed trait Modifier extends scala.annotation.StaticAnnotation 
+
+@field  
+class PrimaryKey extends Modifier
+object PrimaryKey:
+  given FromExpr[PrimaryKey] with
+    def unapply(expr: Expr[PrimaryKey])(using q: Quotes): Option[PrimaryKey] = 
+      Some(PrimaryKey())
+
+@field      
+case class ForeignKey(table: Class[_] | Type[_], column: String, onDelete: compiler.OnDelete = compiler.OnDelete.Cascade) extends Modifier
+object ForeignKey:
+  given FromExpr[ForeignKey] with
+    def unapply(expr: Expr[ForeignKey])(using q: Quotes): Option[ForeignKey] = 
       import q.reflect.*
+
+      inline def targetType(e: Expr[Class[_] | Type[_]]): Type[_] =
+        e match
+          case '{$x: Class[a]} => Type.of[a] 
+
       expr match
-        case '{PrimaryKey} => Some(PrimaryKey)   
-        case '{AutoIncrement} => Some(AutoIncrement)   
-        case '{Unique} => Some(Unique)   
+        case '{ForeignKey($c, ${Expr(r)})} => Some(ForeignKey(targetType(c),r))
+        case '{new ForeignKey($c, ${Expr(r)})} => Some(ForeignKey(targetType(c), r))
+        case '{ForeignKey($c, ${Expr(r)}, ${Expr(d)})} => Some(ForeignKey(targetType(c), r, d))
+        case '{new ForeignKey($c, ${Expr(r)}, ${Expr(d)})} => Some(ForeignKey(targetType(c), r, d))
+        case _ => None        
+
+@field
+class AutoIncrement extends Modifier
+object AutoIncrement:
+  given FromExpr[AutoIncrement] with
+    def unapply(expr: Expr[AutoIncrement])(using q: Quotes): Option[AutoIncrement] = 
+      Some(AutoIncrement())  
+
+@field
+class Unique extends Modifier
+object Unique:
+  given FromExpr[Unique] with
+    def unapply(expr: Expr[Unique])(using q: Quotes): Option[Unique] = 
+      Some(Unique())    
+
+@field
+case class Indexed(order: compiler.Order = compiler.Order.Asc) extends Modifier
+object Indexed:
+  given FromExpr[Indexed] with
+    def unapply(expr: Expr[Indexed])(using q: Quotes): Option[Indexed] = 
+      expr match
         case '{Indexed()} | '{new Indexed()} => Some(Indexed())   
-        case '{Indexed($order)} => Expr.unapply(order).map(Indexed(_))
-        case '{new Indexed($order)} => Expr.unapply(order).map(Indexed(_))
-        case '{ForeignKey($c, $reference) : ForeignKey[_, a]} => Expr.unapply(reference).map(ForeignKey[Type, a](Type.of[a],_))
-        case '{new ForeignKey($c, $reference) : ForeignKey[_, a]} => Expr.unapply(reference).map(ForeignKey[Type, a](Type.of[a], _))
-        case '{ForeignKey($c, $reference, $onDelete) : ForeignKey[_, a]} => 
-          for 
-            r <- Expr.unapply(reference)
-            d <- Expr.unapply(onDelete)
-          yield ForeignKey[Type, a](Type.of[a],r, d)  
-        case '{new ForeignKey($c, $reference, $onDelete) : ForeignKey[_, a]} => 
-          for 
-            r <- Expr.unapply(reference)
-            d <- Expr.unapply(onDelete)
-          yield ForeignKey[Type, a](Type.of[a], r, d)
+        case '{Indexed(${Expr(order)})} => Some(Indexed(order))
+        case '{new Indexed(${Expr(order)})} => Some(Indexed(order)) 
         case _ => None    
 
 @field
@@ -91,16 +105,5 @@ object Name:
     def unapply(expr: Expr[Name])(using q: Quotes): Option[Name] = 
       import q.reflect.*
       expr match
-        case '{new Name($name)} => Expr.unapply(name).map(Name(_))
-        case _ => None
-
-@field        
-class Modifiers(val values: Modifier*) extends scala.annotation.StaticAnnotation
-object Modifiers:
-  given FromExpr[Modifiers] with
-    def unapply(expr: Expr[Modifiers])(using q: Quotes): Option[Modifiers] = 
-      import q.reflect.*
-      expr match
-        case '{ new Modifiers(${ Varargs(Exprs(parts)) }: _*) } =>
-          Some(Modifiers(parts*))
-        case _ => None                
+        case '{new Name(${Expr(name)})} => Some(Name(name))
+        case _ => None          

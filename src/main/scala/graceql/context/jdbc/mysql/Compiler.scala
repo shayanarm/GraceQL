@@ -12,7 +12,7 @@ object Compiler extends VendorTreeCompiler[MySQL]:
 
   def typeString[A](using q: Quotes)(tpe: Type[A]): Expr[String] = 
     tpe match
-      case '[String] => '{"TEXT"}
+      case '[String] => '{"LONGTEXT"}
       case '[Int] => '{"INT"}
 
   override protected def adaptSupport[S[+X] <: Iterable[X], A](

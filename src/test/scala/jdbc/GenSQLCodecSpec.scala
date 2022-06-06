@@ -17,7 +17,6 @@ import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
 
 class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
-  import Modifier.*
 
   @Name("users")
   case class User(id: Int, name: String) derives SQLRow
@@ -273,10 +272,10 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
   @Name("posts")
   case class Post(
-    @Modifiers(PrimaryKey, AutoIncrement) id: Int, 
-    @Name("user_id") @Modifiers(ForeignKey(classOf[User], "id", OnDelete.Cascade), Unique) userId: Int,   
-    @Modifiers(Indexed(Order.Desc)) content: String,
-    @Modifiers(Indexed(Order.Asc)) priority: Option[Int] = Some(0)
+    @PrimaryKey @AutoIncrement id: Int, 
+    @Name("user_id") @ForeignKey(classOf[User], "id", OnDelete.Cascade) @Unique userId: Int,   
+    @Indexed(Order.Desc) content: String,
+    @Indexed(Order.Asc) priority: Option[Int] = Some(0)
   ) derives SQLRow
 
   val posts: Table[GenSQL, Post] = Table[GenSQL, Post]()

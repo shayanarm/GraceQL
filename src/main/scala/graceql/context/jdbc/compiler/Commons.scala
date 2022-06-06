@@ -15,112 +15,131 @@ trait Commons(using val q: Quotes) {
       name: String,
       tpe: Type[A],
       nameOverride: Option[String],
-      mods: Option[Modifiers],
+      mods: List[Modifier],
       default: Option[Expr[A]]
   ):
     def resolvedName = nameOverride.getOrElse(name).trim
   object FieldSpec:
-    def forType[A](using Type[A]): Either[List[String], List[FieldSpec[_ <: Any]]] =
+    def forType[A](using
+        Type[A]
+    ): Either[List[String], List[FieldSpec[_ <: Any]]] =
       val trep = TypeRepr.of[A]
       val caseFields = trep.typeSymbol.caseFields
       val companion = trep.typeSymbol.companionClass
-      val fields: List[Either[List[String], FieldSpec[_ <: Any]]] = caseFields.zipWithIndex.map((s, i) =>
-        val fieldType = trep.memberType(s)
-        fieldType.asType match
-          case '[t] =>
-            val default = companion
-              .declaredMethod(s"$$lessinit$$greater$$default$$${i + 1}")
-              .headOption
-              .map(Select(Ref(trep.typeSymbol.companionModule), _))
-              .map(_.asExprOf[t])
-            
-            val nameOverride = annotationFor[Name](s).map(_.map(_.name))
-            val mods = annotationFor[Modifiers](s)
-            
-            (nameOverride, mods) match
-              case (Right(no), Right(ms)) => Right(FieldSpec[t](s.name, Type.of[t], no, ms, default))
-              case (Left(e1), Left(e2)) => Left(List(e1, e2))
-              case (Left(e), _) => Left(List(e))
-              case (_, Left(e)) => Left(List(e))
-      )
+      val fields: List[Either[List[String], FieldSpec[_ <: Any]]] =
+        caseFields.zipWithIndex.map((s, i) =>
+          val fieldType = trep.memberType(s)
+          fieldType.asType match
+            case '[t] =>
+              val default = companion
+                .declaredMethod(s"$$lessinit$$greater$$default$$${i + 1}")
+                .headOption
+                .map(Select(Ref(trep.typeSymbol.companionModule), _))
+                .map(_.asExprOf[t])
+              
+              val nameOverride = annotationFor[Name](s).map(_.map(_.name))
+              val mods = List(
+                annotationFor[PrimaryKey](s),
+                annotationFor[ForeignKey](s),
+                annotationFor[AutoIncrement](s),
+                annotationFor[Unique](s),
+                annotationFor[Indexed](s)
+              ).foldLeft[Either[List[String], List[Modifier]]](Right(Nil)){
+                  case (Right(ms), Right(m)) => Right(ms ++ m.toList)
+                  case (Left(es), Left(e)) => Left(e :: es)
+                  case (l@ Left(es), _) => l
+                  case (_ , Left(e)) => Left(List(e))
+              }
 
-      fields.foldRight[Either[List[String], List[FieldSpec[_ <: Any]]]](Right(Nil)) {(i, c) => 
+              (nameOverride, mods) match
+                case (Right(no), Right(ms)) =>
+                  Right(FieldSpec[t](s.name, Type.of[t], no, ms, default))
+                case (Left(e1), Left(e2)) => Left(e1 :: e2)
+                case (Left(e), _)         => Left(List(e))
+                case (_, Left(e))         => Left(e)
+        )
+
+      fields.foldRight[Either[List[String], List[FieldSpec[_ <: Any]]]](
+        Right(Nil)
+      ) { (i, c) =>
         (c, i) match
-          case (Right(fs), Right(f)) => Right(f :: fs)  
-          case (Left(es), Left(e)) => Left(e ++ es)
-          case (l@Left(_), Right(_)) => l
-          case (Right(_), Left(e)) => Left(e)
+          case (Right(fs), Right(f))   => Right(f :: fs)
+          case (Left(es), Left(e))     => Left(e ++ es)
+          case (l @ Left(_), Right(_)) => l
+          case (Right(_), Left(e))     => Left(e)
       }
-    def forAST(specs: List[FieldSpec[_]]): List[CreateSpec[Expr, Type]] = 
-      val colDefs = specs.map {
-         case fs@ FieldSpec(_, tpe, _ , mods, default) => 
-          val astDefault = default.map(ColMod.Default(_))           
-          tpe match
-            case '[Option[a]] => 
-              CreateSpec.ColDef[Expr, Type, a](
-                  fs.resolvedName,
-                  Type.of[a],
-                  for
-                    ms <- mods.toList
-                    d <- ms.values.collect {
-                      case Modifier.AutoIncrement => ColMod.AutoInc[Expr]()
-                    } ++ astDefault.toList
-                  yield d  
-                )
-            case '[a] =>
-              CreateSpec.ColDef[Expr, Type, a](
-                  fs.resolvedName,
-                  Type.of[a],
-                  for
-                    ms <- mods.toList
-                    d <- ms.values.collect {
-                      case Modifier.AutoIncrement => ColMod.AutoInc[Expr]()
-                    } ++ List(ColMod.NotNull[Expr]()) ++ astDefault.toList
-                  yield d  
-                )                             
+    def forAST(specs: List[FieldSpec[_]]): List[CreateSpec[Expr, Type]] =
+      val colDefs = specs.map { case fs @ FieldSpec(_, tpe, _, mods, default) =>
+        val astDefault = default.map(ColMod.Default(_))
+        tpe match
+          case '[Option[a]] =>
+            CreateSpec.ColDef[Expr, Type, a](
+              fs.resolvedName,
+              Type.of[a],
+              for
+                d <- mods.collect { case _: AutoIncrement =>
+                  ColMod.AutoInc[Expr]()
+                } ++ astDefault.toList
+              yield d
+            )
+          case '[a] =>
+            CreateSpec.ColDef[Expr, Type, a](
+              fs.resolvedName,
+              Type.of[a],
+              for
+                d <- mods.collect { case _: AutoIncrement =>
+                  ColMod.AutoInc[Expr]()
+                } ++ List(ColMod.NotNull[Expr]()) ++ astDefault.toList
+              yield d
+            )
       }
-      val pk: Option[CreateSpec[Expr, Type]] = 
+      val pk: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          mod <- spec.mods.toList
-          v <- mod.values.collect {
-              case Modifier.PrimaryKey => spec.resolvedName
-            }.take(1)
+          v <- spec.mods.collect { case _: PrimaryKey =>
+              spec.resolvedName
+            }
+            .take(1)
         yield v) match
           case Nil => None
-          case ks => Some(CreateSpec.PK(ks))
-      
-      val indices: Option[CreateSpec[Expr, Type]] = 
+          case ks  => Some(CreateSpec.PK(ks))
+
+      val indices: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          mod <- spec.mods.toList
-          v <- mod.values.collect {
-              case Modifier.Indexed(ord) => (spec.resolvedName, ord)
-            }.take(1)
+          v <- spec.mods.collect { case Indexed(ord) =>
+              (spec.resolvedName, ord)
+            }
+            .take(1)
         yield v) match
-          case Nil => None
+          case Nil  => None
           case idxs => Some(CreateSpec.Index(idxs))
 
-      val uniques: Option[CreateSpec[Expr, Type]] =       
+      val uniques: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          mod <- spec.mods.toList
-          v <- mod.values.collect {
-              case Modifier.Unique => spec.resolvedName
-            }.take(1)
+          v <- spec.mods.collect { case _: Unique =>
+              spec.resolvedName
+            }
+            .take(1)
         yield v) match
           case Nil => None
-          case ks => Some(CreateSpec.Unique(ks))
+          case ks  => Some(CreateSpec.Unique(ks))
       val fks: List[CreateSpec[Expr, Type]] = (for
-          spec <- specs
-          mod <- spec.mods.toList
-          v <- mod.values.collect {
-              case Modifier.ForeignKey(tpe: Type[_], ref, onDel) => 
-                tpe match
-                  case '[a] => CreateSpec.FK[Expr, Type](spec.resolvedName, Expr(require.tableName[a]), ref, onDel)
-            }.take(1)
-        yield v)    
-      colDefs ++ pk.toList ++ fks ++ indices.toList ++ uniques.toList    
+        spec <- specs
+        v <- spec.mods.collect { case ForeignKey(tpe: Type[_], ref, onDel) =>
+            tpe match
+              case '[a] =>
+                CreateSpec.FK[Expr, Type](
+                  spec.resolvedName,
+                  Expr(require.tableName[a]),
+                  ref,
+                  onDel
+                )
+          }
+          .take(1)
+      yield v)
+      colDefs ++ pk.toList ++ fks ++ indices.toList ++ uniques.toList
 
   def preprocess[A](
       e: Expr[A]
@@ -153,15 +172,20 @@ trait Commons(using val q: Quotes) {
         )
     yield ann.name
 
-  def annotationFor[T <: scala.annotation.StaticAnnotation](symb: Symbol)(using Type[T], FromExpr[T]): Either[String, Option[T]] =
+  def annotationFor[T <: scala.annotation.StaticAnnotation](
+      symb: Symbol
+  )(using Type[T], FromExpr[T]): Either[String, Option[T]] =
     for
       opt <- Right(symb.getAnnotation(TypeRepr.of[T].typeSymbol))
-      v <- opt.fold(Right(None)){term => 
-        Expr.unapply(term.asExprOf[T])
-        .toRight(s"Static annotation ${Type.show[T]} for field ${symb.toString} cannot be unlifted. Annotation must be constructed using literal values")
-        .map(Some(_))  
+      v <- opt.fold(Right(None)) { term =>
+        Expr
+          .unapply(term.asExprOf[T])
+          .toRight(
+            s"Static annotation ${Type.show[T]} for field ${symb.toString} cannot be unlifted. Annotation must be constructed using literal values"
+          )
+          .map(Some(_))
       }
-    yield v          
+    yield v
 
   def schemaErrors[A](using Type[A]): Option[String] =
     val r = for
@@ -207,11 +231,10 @@ trait Commons(using val q: Quotes) {
             else None
           err.toList
         }
-        val modErrs: List[String] = 
+        val modErrs: List[String] =
           for
             fs <- fieldSpecs
-            mods <- fs.mods.toList
-            mod <- mods.values
+            mod <- fs.mods
             err <- Nil
           yield err
 
@@ -243,12 +266,19 @@ trait Commons(using val q: Quotes) {
       self.tableName[T] match
         case Right(n)  => n
         case Left(err) => report.errorAndAbort(err)
-    def fieldSpecs[T](using Type[T]): List[FieldSpec[_]] = 
+    def fieldSpecs[T](using Type[T]): List[FieldSpec[_]] =
       FieldSpec.forType[T] match
         case Right(specs) => specs
-        case Left(errs) => report.errorAndAbort(
-          errs.map(e => s"-  $e").mkString(s"Error fetching field information for type ${Type.show[T]}:\n", "\n", "")
-        )    
+        case Left(errs) =>
+          report.errorAndAbort(
+            errs
+              .map(e => s"-  $e")
+              .mkString(
+                s"Error fetching field information for type ${Type.show[T]}:\n",
+                "\n",
+                ""
+              )
+          )
 
   object errorStrings:
     def sqlEncodingNotFound[A](using Type[A]): String =
