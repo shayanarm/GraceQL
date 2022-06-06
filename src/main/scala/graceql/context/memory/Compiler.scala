@@ -4,7 +4,7 @@ import scala.quoted.*
 import graceql.core.*
 
 object Compiler {
-  def compile[R[_],M[+_],A](e: Expr[A])(using q: Quotes, tr: Type[R], tm: Type[M], ta: Type[A]): Expr[() => A] = 
+  def compile[R[_],M[_],A](e: Expr[A])(using q: Quotes, tr: Type[R], tm: Type[M], ta: Type[A]): Expr[() => A] = 
     import q.reflect.*
     new TreeTraverser {
       override def traverseTree(tree: Tree)(owner: Symbol): Unit = 

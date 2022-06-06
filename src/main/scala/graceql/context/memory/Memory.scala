@@ -3,6 +3,7 @@ package graceql.context.memory
 import graceql.core.*
 import graceql.context.memory.Compiler
 import graceql.data.*
+import scala.quoted.*
 import scala.collection.IterableFactory
 import scala.collection.mutable.ArrayBuffer
 

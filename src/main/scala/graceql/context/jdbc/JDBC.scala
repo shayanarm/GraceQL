@@ -88,14 +88,14 @@ object Unique:
       Some(Unique())    
 
 @field
-case class Indexed(order: compiler.Order = compiler.Order.Asc) extends Modifier
-object Indexed:
-  given FromExpr[Indexed] with
-    def unapply(expr: Expr[Indexed])(using q: Quotes): Option[Indexed] = 
+case class Index(order: compiler.Order = compiler.Order.Asc) extends Modifier
+object Index:
+  given FromExpr[Index] with
+    def unapply(expr: Expr[Index])(using q: Quotes): Option[Index] = 
       expr match
-        case '{Indexed()} | '{new Indexed()} => Some(Indexed())   
-        case '{Indexed(${Expr(order)})} => Some(Indexed(order))
-        case '{new Indexed(${Expr(order)})} => Some(Indexed(order)) 
+        case '{Index()} | '{new Index()} => Some(Index())   
+        case '{Index(${Expr(order)})} => Some(Index(order))
+        case '{new Index(${Expr(order)})} => Some(Index(order)) 
         case _ => None    
 
 @field

@@ -10,6 +10,10 @@ package object graceql {
   transparent inline def query[R[_], M[+_]]: context.CallProxy[QueryContext[R, M]] = 
     context[QueryContext[R, M]]
 
+  // object runtime:
+  //   transparent inline def query[R[_], M[+_]]: context.CallProxy[QueryContext[R, M]] = 
+  //     context[QueryContext[R, M]]      
+
   class FunctionsProxy[N[+_]](using c: Capabilities[N]):
 
     inline def nullary[A](inline f: N[A]): () => A = 

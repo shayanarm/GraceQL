@@ -43,7 +43,7 @@ trait Commons(using val q: Quotes) {
                 annotationFor[ForeignKey](s),
                 annotationFor[AutoIncrement](s),
                 annotationFor[Unique](s),
-                annotationFor[Indexed](s)
+                annotationFor[Index](s)
               ).foldLeft[Either[List[String], List[Modifier]]](Right(Nil)){
                   case (Right(ms), Right(m)) => Right(ms ++ m.toList)
                   case (Left(es), Left(e)) => Left(e :: es)
@@ -107,7 +107,7 @@ trait Commons(using val q: Quotes) {
       val indices: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          v <- spec.mods.collect { case Indexed(ord) =>
+          v <- spec.mods.collect { case Index(ord) =>
               (spec.resolvedName, ord)
             }
             .take(1)
@@ -223,19 +223,30 @@ trait Commons(using val q: Quotes) {
             )
           case _ => None
         val fieldNameErrors = fieldSpecs.flatMap { fs =>
-          val err =
             if fs.resolvedName.isBlank then
-              Some(
-                s"Resolved SQL column name for the case field ${fs.name} cannot be blank"
+              List(
+                s"Resolved SQL column name for the case field `${fs.name}` cannot be blank"
               )
-            else None
-          err.toList
+            else Nil
         }
         val modErrs: List[String] =
           for
             fs <- fieldSpecs
             mod <- fs.mods
-            err <- Nil
+            err <- {
+              mod match             
+                case ForeignKey(tpe: Type[_], field, onDel) =>
+                  val onDelErrors = (fs.tpe, onDel) match
+                    case ('[Option[a]], OnDelete.SetNull) => Nil
+                    case (_, OnDelete.SetNull) => List("`OnDelete.SetNull` can only be specified for nullable columns")
+                    case _ => Nil
+                  val fkErrors = tpe match
+                    case '[a] => TypeRepr.of[a].typeSymbol.caseFields.exists(_.name == field) match
+                      case true => Nil
+                      case false => List(s"Referenced foreign key column `$field` on class ${Type.show[a]} does not exist")
+                  onDelErrors ++ fkErrors  
+                case _ => Nil
+            }
           yield err
 
         columnTypeErr.toList ++ fieldNameErrors ++ modErrs match

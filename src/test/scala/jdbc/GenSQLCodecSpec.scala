@@ -21,9 +21,17 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   @Name("users")
   case class User(id: Int, name: String) derives SQLRow
 
-  val users: Table[GenSQL, User] = Table[GenSQL, User]()  
-  
+  @Name("posts")
+  case class Post(
+    @PrimaryKey @AutoIncrement id: Int, 
+    @Name("user_id") @ForeignKey(classOf[User], "id", OnDelete.Cascade) @Unique userId: Int,   
+    @Index(Order.Desc) content: String,
+    @Index(Order.Asc) priority: Option[Int] = Some(0)
+  ) derives SQLRow
 
+
+  val users: Table[GenSQL, User] = Table[GenSQL, User]()
+  val posts: Table[GenSQL, Post] = Table[GenSQL, Post]()
 
   inline def parseAssert[A](
       inline src: Queryable[[x] =>> Table[GenSQL, x], Iterable, DBIO] ?=> A
@@ -270,16 +278,6 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  @Name("posts")
-  case class Post(
-    @PrimaryKey @AutoIncrement id: Int, 
-    @Name("user_id") @ForeignKey(classOf[User], "id", OnDelete.Cascade) @Unique userId: Int,   
-    @Indexed(Order.Desc) content: String,
-    @Indexed(Order.Asc) priority: Option[Int] = Some(0)
-  ) derives SQLRow
-
-  val posts: Table[GenSQL, Post] = Table[GenSQL, Post]()
-
   it should "parse a comprehensive CREATE TABLE statement" in {
     parseAssert {
       native"""create table ${posts.lift}""".unlift
@@ -288,3 +286,4 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 }
+  

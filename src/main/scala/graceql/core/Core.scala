@@ -1,6 +1,7 @@
 package graceql.core
 
 import graceql.data.*
+import scala.quoted.*
 import scala.annotation.targetName
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
@@ -9,8 +10,10 @@ import scala.concurrent.Promise
 import scala.util.Try
 import scala.Conversion
 
-class GraceException(val message: Option[String] = None, val cause: Option[Throwable] = None)
-    extends Exception(message.orNull, cause.orNull):
+class GraceException(
+    val message: Option[String] = None,
+    val cause: Option[Throwable] = None
+) extends Exception(message.orNull, cause.orNull):
   def this(message: String, cause: Throwable) = this(Some(message), Some(cause))
   def this(message: String) = this(Some(message), None)
   def this(cause: Throwable) = this(None, Some(cause))
@@ -30,7 +33,7 @@ object Execute:
 
 class Exe[R[_], N[_], C, A](val compiled: N[A]):
   inline def apply[B](using conn: C): B =
-    summonInline[Execute[R, N, C, A, B]].apply(compiled, conn)  
+    summonInline[Execute[R, N, C, A, B]].apply(compiled, conn)
   inline def as[G[_]](using C): G[A] =
     apply[G[A]]
   inline def run(using C): A = as[[x] =>> x]
@@ -39,18 +42,17 @@ class Exe[R[_], N[_], C, A](val compiled: N[A]):
   inline def asTry(using C): Try[A] = as[Try]
   inline def option(using C): Option[A] = as[Option]
   inline def either(using C): Either[Throwable, A] =
-    as[[x] =>> Either[Throwable, x]]  
+    as[[x] =>> Either[Throwable, x]]
 
 trait Capabilities[N[+_]]:
-  extension[A](bin: N[A])
+  extension [A](bin: N[A])
     def typed[B]: N[B]
-    def unlift: A    
-  
-  extension(sc: StringContext)
-    def native(s: N[Any]*): N[Any]
-  
-  extension[A](a: A)
-    def lift: N[A]   
+    def unlift: A
+
+  extension (sc: StringContext) def native(s: N[Any]*): N[Any]
+
+  extension [A](a: A)
+    def lift: N[A]
     inline def |>[B](f: A => B) = f(a)
 
 final type Read[R[_], M[_], T] = T match
@@ -58,7 +60,9 @@ final type Read[R[_], M[_], T] = T match
   case Source[R, M, a] => M[Read[R, M, a]]
   case _               => T
 
-trait Queryable[R[_], M[_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] with Capabilities[N]:
+trait Queryable[R[_], M[_], N[+_]]
+    extends Relational[[x] =>> Source[R, M, x]]
+    with Capabilities[N]:
 
   extension [A](a: A)
     @terminal
@@ -90,13 +94,13 @@ trait Queryable[R[_], M[_], N[+_]] extends Relational[[x] =>> Source[R, M, x]] w
     @terminal
     inline def truncate(): Int = clear()
     @terminal
-    def create(): Unit  
+    def create(): Unit
     @terminal
-    def delete(): Unit    
+    def delete(): Unit
 
 trait Context[R[_]]:
   self =>
-  type Native[+A] 
+  type Native[+A]
   type Capabilities
   type Connection
 
@@ -105,18 +109,19 @@ trait Context[R[_]]:
   type Exe[A] <: graceql.core.Exe[R, Native, Connection, A]
 
   protected def exe[A](compiled: Native[A]): Exe[A]
-  
+
   inline def apply[A](inline query: Capabilities ?=> A): Exe[A] =
     exe(compile(query))
 
-  inline def compile[A](inline query: Capabilities ?=> A): Native[A]    
+  inline def compile[A](inline query: Capabilities ?=> A): Native[A]
 
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>
 
   final type Queryable = graceql.core.Queryable[R, M, Native]
   final type Capabilities = Queryable
-  final class Exe[A](compiled: Native[A]) extends graceql.core.Exe[R, Native, Connection, A](compiled):
+  final class Exe[A](compiled: Native[A])
+      extends graceql.core.Exe[R, Native, Connection, A](compiled):
     type RowType = A match
       case M[a] => a
       case _    => A
@@ -170,7 +175,8 @@ object Transaction:
         me
       )
   extension [T[_], C](tr: Transaction[T, C, Nothing])
-    @scala.annotation.nowarn final def apply[A](block: C ?=> T[A]): T[A] = tr match
+    @scala.annotation.nowarn
+    final def apply[A](block: C ?=> T[A]): T[A] = tr match
       case conn @ Continuation(_, open, commit, rollback, me) =>
         given MonadError[T] = me
         for
@@ -188,7 +194,8 @@ object Transaction:
         yield r
     final def map[A](f: C => T[A]): Transaction[T, Nothing, A] =
       Conclusion(() => apply(s ?=> f(s)))
-    @scala.annotation.nowarn final def withFilter(pred: C => Boolean): Transaction[T, C, Nothing] =
+    @scala.annotation.nowarn
+    final def withFilter(pred: C => Boolean): Transaction[T, C, Nothing] =
       tr match
         case conn @ Continuation(_, _, _, _, me) =>
           pred(conn.session) match
@@ -197,7 +204,8 @@ object Transaction:
               throw new NoSuchElementException(
                 "Transaction.withFilter predicate is not satisfied. Also, this method should not be called"
               )
-    @scala.annotation.nowarn final def flatMap[C2, A](
+    @scala.annotation.nowarn
+    final def flatMap[C2, A](
         f: C => Transaction[T, C2, A]
     ): Transaction[T, C2, A] = tr match
       case conn @ Continuation(_, o1, c1, rb1, me) =>
