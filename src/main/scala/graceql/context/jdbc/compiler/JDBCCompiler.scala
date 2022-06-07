@@ -4,9 +4,21 @@ import scala.quoted.*
 import graceql.core.*
 import graceql.context.jdbc.*
 import graceql.quoted.CompileOps
+import scala.util.Try
 
 trait VendorTreeCompiler[V]:
   self =>
+
+  def tryCompile[S[+X] <: Iterable[X], A](
+      e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
+  )(using
+      q: Quotes,
+      ta: Type[A],
+      ts: Type[S],
+      tv: Type[V]
+  ): Expr[Try[DBIO[A]]] = 
+    graceql.quoted.CompileOps.tryCompile {() => compile[S, A](e)}
+
   def compile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
   )(using
@@ -57,7 +69,7 @@ trait VendorTreeCompiler[V]:
     ): Expr[DBIO[A]] =
 
       val fallback: PartialFunction[Expr[Any], Node[Expr, Type]] = { case e =>
-        report.errorAndAbort(s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}")
+        throw GraceException(s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}")
       }
       def toNative(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
         partials.foldRight(fallback) { (i, c) =>
@@ -80,7 +92,7 @@ trait VendorTreeCompiler[V]:
             schemaErrors[a](using tpe).toList ++ msgs 
         }) match
           case Nil => ()
-          case errs => report.errorAndAbort(errs.mkString("\n"))        
+          case errs => throw GraceException(errs.mkString("\n"))        
 
     protected def typeCheck(tree: Node[Expr, Type]): Node[Expr, Type] = 
       checks.schemas(tree)

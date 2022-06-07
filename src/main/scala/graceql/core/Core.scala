@@ -113,7 +113,12 @@ trait Context[R[_]]:
   inline def apply[A](inline query: Capabilities ?=> A): Exe[A] =
     exe(compile(query))
 
+  inline def tried[A](inline query: Capabilities ?=> A): Try[Exe[A]] =
+    tryCompile[A](query).map(exe)
+
   inline def compile[A](inline query: Capabilities ?=> A): Native[A]
+  
+  inline def tryCompile[A](inline query: Capabilities ?=> A): Try[Native[A]]
 
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>

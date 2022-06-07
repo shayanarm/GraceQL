@@ -56,9 +56,8 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
               } =>
             Node.TypeAnn(recurse(ctx)(native), Type.of[b])
           case e =>
-            report.errorAndAbort(
-              "Native code must only be provided using the `lift` method or the `native` interpolator",
-              e
+            throw GraceException(
+              "Native code must only be provided using the `lift` method or the `native` interpolator"
             )          
     }
 

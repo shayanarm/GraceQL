@@ -27,7 +27,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     with should.Matchers
     with BeforeAndAfter {
   import JDBCSpec.*
-  inline def vsql = sql[V, S]    
+  inline def vsql = sql[V, S]
   inline def runTests()(using ctx: JDBCQueryContext[V, S]) =
     implicit var connection: ctx.Connection = null
 
@@ -42,7 +42,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       DriverManager.registerDriver(driver)
       connection = DriverManager.getConnection(url, user.orNull, password)
 
-      //delete tables if any exists
+      // delete tables if any exists
       vsql {
         record1s.delete()
       }.as[Try]
@@ -51,10 +51,10 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       }.as[Try]
       vsql {
         record3s.delete()
-      }.as[Try]                
+      }.as[Try]
       vsql {
         record4s.delete()
-      }.as[Try]                         
+      }.as[Try]
     }
 
     after {
@@ -80,39 +80,35 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
           record1s.create()
           record1s.delete()
           record1s.create()
-          record1s.delete()          
+          record1s.delete()
         }.run
       }
     }
 
-    it should "create and drop annotated tables" in {   
+    it should "create and drop annotated tables" in {
       noException should be thrownBy {
-            vsql {
-              record2s.create()
-              record3s.create()
-              record4s.create()
-              record4s.delete()
-              record3s.delete()
-              record2s.delete()              
-            }.run         
+        vsql {
+          record2s.create()
+          record3s.create()
+          record4s.create()
+          record4s.delete()
+          record3s.delete()
+          record2s.delete()
+        }.run
       }
-    }        
+    }
 
-    it should "not allow OnDelete.SetNull for non-optional columns" in {  
-      """
-            vsql {
-              record5s.create()
-            }
-      """ shouldNot compile
-    }    
+    it should "not allow OnDelete.SetNull for non-optional columns" in {
+      vsql.tried {
+        record5s.create()
+      }.isFailure shouldBe true
+    }
 
-    it should "not allow invalid reference names for foreign keys " in {   
-      """
-            vsql {
-              record6s.create()
-            }
-      """ shouldNot compile
-    }        
+    it should "not allow invalid reference names for foreign keys " in {
+      vsql.tried {
+        record6s.create()
+      }.isFailure shouldBe true
+    }
 }
 
 object JDBCSpec:
@@ -125,25 +121,29 @@ object JDBCSpec:
 
   @Name("record3s")
   case class Record3(
-    @PrimaryKey @AutoIncrement field1: Int, 
-    @ForeignKey(classOf[Record2], "field1", OnDelete.Cascade) @Unique @Index(Order.Desc) field2: Int,   
-    @Name("my_field_3") field3: String,
-    @Index(Order.Asc) field4: Option[Int] = Some(0)
-  ) derives SQLRow 
+      @PrimaryKey @AutoIncrement field1: Int,
+      @ForeignKey(classOf[Record2], "field1", OnDelete.Cascade) @Unique @Index(
+        Order.Desc
+      ) field2: Int,
+      @Name("my_field_3") field3: String,
+      @Index(Order.Asc) field4: Option[Int] = Some(0)
+  ) derives SQLRow
 
   @Name("record4s")
   case class Record4(
-    @ForeignKey(classOf[Record2], "field1", OnDelete.SetDefault) field1: Int, 
-    @ForeignKey(classOf[Record2], "field1", OnDelete.Restrict) field2: Int,
-    @ForeignKey(classOf[Record2], "field1", OnDelete.SetNull) field3: Option[Int]
-    ) derives SQLRow
+      @ForeignKey(classOf[Record2], "field1", OnDelete.SetDefault) field1: Int,
+      @ForeignKey(classOf[Record2], "field1", OnDelete.Restrict) field2: Int,
+      @ForeignKey(classOf[Record2], "field1", OnDelete.SetNull) field3: Option[
+        Int
+      ]
+  ) derives SQLRow
 
   @Name("record5s")
   case class Record5(
-    @ForeignKey(classOf[Record2], "field1", OnDelete.SetNull) field1: Int, 
+      @ForeignKey(classOf[Record2], "field1", OnDelete.SetNull) field1: Int
   ) derives SQLRow
 
   @Name("record6s")
   case class Record6(
-    @ForeignKey(classOf[Record2], "invalid") field1: Int 
-  ) derives SQLRow  
+      @ForeignKey(classOf[Record2], "invalid") field1: Int
+  ) derives SQLRow

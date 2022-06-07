@@ -24,33 +24,25 @@ class MemorySpec extends AnyFlatSpec with should.Matchers {
   """
     The IterRef context
     """ should "not allow ref.create()" in {
-    """
-            query[IterRef,Seq] {
-                ref.create()
-            }.run    
-            """ shouldNot compile
+    query[IterRef, Seq].tried {
+      ref.create()
+    }.isFailure shouldBe true
   }
 
   it should "not allow ref.delete()" in {
-    """
-            query[IterRef,Seq] {
-                ref.delete()
-            }.run    
-            """ shouldNot compile
+    query[IterRef, Seq].tried {
+      ref.delete()
+    }.isFailure shouldBe true
   }
 
   it should "not allow native syntax" in {
-    """
-            query[IterRef,Seq] {
-                native"foo"
-            }.run    
-            """ shouldNot compile
+    query[IterRef, Seq].tried {
+      native"foo"
+    }.isFailure shouldBe true
   }
   it should "not allow typing on native syntax" in {
-    """
-            query[IterRef,Seq] {
-                (() => "sdf").typed[Int]
-            }.run    
-            """ shouldNot compile
+    query[IterRef, Seq].tried {
+      (() => "sdf").typed[Int]
+    }.isFailure shouldBe true
   }
 }

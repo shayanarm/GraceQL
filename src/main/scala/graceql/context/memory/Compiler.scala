@@ -11,14 +11,17 @@ object Compiler {
         tree match
           case Select(i, call) if i.tpe <:< TypeRepr.of[Queryable[R,M,[x] =>> () => x]] =>
             call match
-              case "create" => report.errorAndAbort("`in-memory` context refs cannot be created", e)
-              case "delete" => report.errorAndAbort("`in-memory` context refs cannot be deleted", e)
-              case "native" => report.errorAndAbort("`in-memory` contexts do not support native syntax", e)
-              case "typed" => report.errorAndAbort("`in-memory` contexts do not support native syntax", e)
+              case "create" => throw GraceException("`in-memory` context refs cannot be created")
+              case "delete" => throw GraceException("`in-memory` context refs cannot be deleted")
+              case "native" => throw GraceException("`in-memory` contexts do not support native syntax")
+              case "typed" => throw GraceException("`in-memory` contexts do not support native syntax")
               case _ => super.traverseTree(tree)(owner)
           case _ => super.traverseTree(tree)(owner)      
     }.traverseTree(e.asTerm)(Symbol.spliceOwner)
 
     '{() => $e}
+
+  def tryCompile[R[_],M[_],A](e: Expr[A])(using q: Quotes, tr: Type[R], tm: Type[M], ta: Type[A]): Expr[scala.util.Try[() => A]] = 
+    graceql.quoted.CompileOps.tryCompile(() => compile[R,M,A](e))
 }
 

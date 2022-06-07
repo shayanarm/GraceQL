@@ -263,25 +263,25 @@ trait Commons(using val q: Quotes) {
 
   object assertions:
     def validSchema[A](using Type[A]): Unit =
-      self.schemaErrors[A].foreach(report.errorAndAbort)
+      self.schemaErrors[A].foreach(msg => throw GraceException(msg))
 
   object require:
     def instance[T](using Type[T]): Expr[T] =
       Expr.summon[T] match
         case Some(i) => i
         case None =>
-          report.errorAndAbort(
+          throw GraceException(
             s"Could not obtain an instance for ${Type.show[T]}"
           )
     def tableName[T](using Type[T]): String =
       self.tableName[T] match
         case Right(n)  => n
-        case Left(err) => report.errorAndAbort(err)
+        case Left(err) => throw GraceException(err)
     def fieldSpecs[T](using Type[T]): List[FieldSpec[_]] =
       FieldSpec.forType[T] match
         case Right(specs) => specs
         case Left(errs) =>
-          report.errorAndAbort(
+          throw GraceException(
             errs
               .map(e => s"-  $e")
               .mkString(

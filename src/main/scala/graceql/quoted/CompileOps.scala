@@ -2,8 +2,17 @@ package graceql.quoted
 
 import scala.quoted.*
 import graceql.core.GraceException
+import scala.util.{Try, Success, Failure}
 
 object CompileOps {
+
+  def tryCompile[A](thunk: () => Expr[A])(using Quotes, Type[A]): Expr[Try[A]] =
+    try
+      val v = thunk()
+      '{scala.util.Success($v)}
+    catch
+      case e =>
+        '{scala.util.Failure(GraceException(${Expr(e.getMessage)}))}      
 
   def placeholder[A]: A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")
 
@@ -38,15 +47,13 @@ object CompileOps {
               case ValDef(name, _, None) => throw NotImplementedError(name)
               case v @ ValDef(name, _, Some(b)) =>
                 if v.symbol.flags.is(Flags.Mutable) then
-                  report.errorAndAbort(
-                    "Mutable variable declarations inside queries are not supported.",
-                    v.pos
+                  throw GraceException(
+                    "Mutable variable declarations inside queries are not supported."
                   )
                 else replace(name, b)(block)
               case d : DefDef =>
-                report.errorAndAbort(
-                  "Method definitions inside queries are not supported.",
-                  d.pos
+                throw GraceException(
+                  "Method definitions inside queries are not supported."
                 )
               case other => 
                 block match

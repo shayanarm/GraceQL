@@ -6,6 +6,7 @@ import graceql.data.*
 import scala.quoted.*
 import scala.collection.IterableFactory
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Try
 
 trait MemoryQueryContextImpl[R[_]]:
   opaque type IterableFactoryWrapper[S[X] <: Iterable[X]] = IterableFactory[S]
@@ -132,6 +133,8 @@ trait MemoryQueryContextImpl[R[_]]:
     type Connection = DummyImplicit
     inline def compile[A](inline query: Queryable ?=> A): () => A =
       ${ Compiler.compile[R, S, A]('{query(using sl)}) }
+    inline def tryCompile[A](inline query: Queryable ?=> A): Try[() => A] =
+      ${ Compiler.tryCompile[R, S, A]('{query(using sl)}) }
 
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
     def apply(compiled: () => A, conn: DummyImplicit): A = compiled()
