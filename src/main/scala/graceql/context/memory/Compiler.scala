@@ -22,6 +22,6 @@ object Compiler {
     '{() => $e}
 
   def tryCompile[R[_],M[_],A](e: Expr[A])(using q: Quotes, tr: Type[R], tm: Type[M], ta: Type[A]): Expr[scala.util.Try[() => A]] = 
-    graceql.quoted.CompileOps.tryCompile(() => compile[R,M,A](e))
+    graceql.quoted.CompileOps.tryCompile(compile[R,M,A](e))
 }
 

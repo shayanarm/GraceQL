@@ -6,10 +6,9 @@ import scala.util.{Try, Success, Failure}
 
 object CompileOps {
 
-  def tryCompile[A](thunk: () => Expr[A])(using Quotes, Type[A]): Expr[Try[A]] =
+  def tryCompile[A](thunk: => Expr[A])(using Quotes, Type[A]): Expr[Try[A]] =
     try
-      val v = thunk()
-      '{scala.util.Success($v)}
+      '{scala.util.Success($thunk)}
     catch
       case e =>
         '{scala.util.Failure(GraceException(${Expr(e.getMessage)}))}      

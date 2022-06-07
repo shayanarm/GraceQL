@@ -17,7 +17,7 @@ trait VendorTreeCompiler[V]:
       ts: Type[S],
       tv: Type[V]
   ): Expr[Try[DBIO[A]]] = 
-    graceql.quoted.CompileOps.tryCompile {() => compile[S, A](e)}
+    CompileOps.tryCompile(compile[S, A](e))
 
   def compile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
