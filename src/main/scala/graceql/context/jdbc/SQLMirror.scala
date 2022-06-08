@@ -30,8 +30,17 @@ object SQLEncoding:
   // given jsonArrayVector[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[Vector, A] = SQLJsonArray(Vector)
   // given jsonArrayLazyList[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[LazyList, A] = SQLJsonArray(LazyList)
   // given jsonArrayIterable[A](using ta: SQLEncoding[A])(using ev: ta.Encoding <:< Column): SQLJsonArray[Iterable, A] = SQLJsonArray(Iterable)
-  given SQLBase[Int] with {}
-  given SQLBase[String] with {}    
+  given SQLBase[String] with {}
+  given SQLBase[Char] with {}
+  given SQLBase[Byte] with {}
+  given SQLBase[Boolean] with {}
+  given SQLBase[Short] with {}      
+  given SQLBase[Int] with {}    
+  given SQLBase[Long] with {}    
+  given SQLBase[Float] with {}    
+  given SQLBase[Double] with {}
+  given SQLBase[Unit] with {}    
+  given SQLBase[java.sql.Date] with {}    
   given option[A, E <: Encodings](using ta: SQLEncoding[A, E]): SQLEncoding[Option[A], E](ta.encoding) with {}
   given tuples[T <: Tuple]: SQLEncoding[T, Row.type](Row) with {}
 
@@ -120,8 +129,8 @@ trait SQLMirror[A, M]:
   protected def listToMirror(r: List[Option[Any]]): M
   def mirrorToList(a: M): List[Option[Any]]
   object dynamic:
+    inline def to(a: A): List[Option[Any]] = mirrorToList(self.to(a))    
     inline def from(r: List[Option[Any]]): Try[A] = Try{self.from(listToMirror(r))}
-    inline def to(a: A): List[Option[Any]] = mirrorToList(self.to(a))
     def unapply(r: List[Option[Any]]) : Option[(A, M)] = 
       Try { listToMirror(r) }.toOption.map(m => (self.from(m),m))
 

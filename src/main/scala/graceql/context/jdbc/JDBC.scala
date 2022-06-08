@@ -46,20 +46,20 @@ trait JDBCQueryContext[V, S[+X] <: Iterable[X]]
   final type Connection = JConnection
 
 
-sealed trait Modifier extends scala.annotation.StaticAnnotation 
+sealed trait modifier extends scala.annotation.StaticAnnotation 
 
 @field  
-class PrimaryKey extends Modifier
-object PrimaryKey:
-  given FromExpr[PrimaryKey] with
-    def unapply(expr: Expr[PrimaryKey])(using q: Quotes): Option[PrimaryKey] = 
-      Some(PrimaryKey())
+class pk extends modifier
+object pk:
+  given FromExpr[pk] with
+    def unapply(expr: Expr[pk])(using q: Quotes): Option[pk] = 
+      Some(pk())
 
 @field      
-case class ForeignKey(table: Class[_] | Type[_], column: String, onDelete: compiler.OnDelete = compiler.OnDelete.Cascade) extends Modifier
-object ForeignKey:
-  given FromExpr[ForeignKey] with
-    def unapply(expr: Expr[ForeignKey])(using q: Quotes): Option[ForeignKey] = 
+case class fk(table: Class[_] | Type[_], column: String, onDelete: compiler.OnDelete = compiler.OnDelete.Cascade) extends modifier
+object fk:
+  given FromExpr[fk] with
+    def unapply(expr: Expr[fk])(using q: Quotes): Option[fk] = 
       import q.reflect.*
 
       inline def targetType(e: Expr[Class[_] | Type[_]]): Type[_] =
@@ -67,43 +67,43 @@ object ForeignKey:
           case '{$x: Class[a]} => Type.of[a] 
 
       expr match
-        case '{ForeignKey($c, ${Expr(r)})} => Some(ForeignKey(targetType(c),r))
-        case '{new ForeignKey($c, ${Expr(r)})} => Some(ForeignKey(targetType(c), r))
-        case '{ForeignKey($c, ${Expr(r)}, ${Expr(d)})} => Some(ForeignKey(targetType(c), r, d))
-        case '{new ForeignKey($c, ${Expr(r)}, ${Expr(d)})} => Some(ForeignKey(targetType(c), r, d))
+        case '{fk($c, ${Expr(r)})} => Some(fk(targetType(c),r))
+        case '{new graceql.context.jdbc.fk($c, ${Expr(r)})} => Some(fk(targetType(c), r))
+        case '{fk($c, ${Expr(r)}, ${Expr(d)})} => Some(fk(targetType(c), r, d))
+        case '{new graceql.context.jdbc.fk($c, ${Expr(r)}, ${Expr(d)})} => Some(fk(targetType(c), r, d))
         case _ => None        
 
 @field
-class AutoIncrement extends Modifier
-object AutoIncrement:
-  given FromExpr[AutoIncrement] with
-    def unapply(expr: Expr[AutoIncrement])(using q: Quotes): Option[AutoIncrement] = 
-      Some(AutoIncrement())  
+class autoinc extends modifier
+object autoinc:
+  given FromExpr[autoinc] with
+    def unapply(expr: Expr[autoinc])(using q: Quotes): Option[autoinc] = 
+      Some(autoinc())  
 
 @field
-class Unique extends Modifier
-object Unique:
-  given FromExpr[Unique] with
-    def unapply(expr: Expr[Unique])(using q: Quotes): Option[Unique] = 
-      Some(Unique())    
+class unique extends modifier
+object unique:
+  given FromExpr[unique] with
+    def unapply(expr: Expr[unique])(using q: Quotes): Option[unique] = 
+      Some(unique())    
 
 @field
-case class Index(order: compiler.Order = compiler.Order.Asc) extends Modifier
-object Index:
-  given FromExpr[Index] with
-    def unapply(expr: Expr[Index])(using q: Quotes): Option[Index] = 
+case class index(order: compiler.Order = compiler.Order.Asc) extends modifier
+object index:
+  given FromExpr[index] with
+    def unapply(expr: Expr[index])(using q: Quotes): Option[index] = 
       expr match
-        case '{Index()} | '{new Index()} => Some(Index())   
-        case '{Index(${Expr(order)})} => Some(Index(order))
-        case '{new Index(${Expr(order)})} => Some(Index(order)) 
+        case '{index()} | '{new graceql.context.jdbc.index()} => Some(index())   
+        case '{index(${Expr(order)})} => Some(index(order))
+        case '{new graceql.context.jdbc.index(${Expr(order)})} => Some(index(order)) 
         case _ => None    
 
 @field
-class Name(val name: String) extends scala.annotation.StaticAnnotation
-object Name:
-  given FromExpr[Name] with
-    def unapply(expr: Expr[Name])(using q: Quotes): Option[Name] = 
+class name(val value: String) extends scala.annotation.StaticAnnotation
+object name:
+  given FromExpr[name] with
+    def unapply(expr: Expr[name])(using q: Quotes): Option[name] = 
       import q.reflect.*
       expr match
-        case '{new Name(${Expr(name)})} => Some(Name(name))
+        case '{new graceql.context.jdbc.name(${Expr(value)})} => Some(name(value))
         case _ => None          

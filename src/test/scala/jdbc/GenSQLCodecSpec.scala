@@ -18,15 +18,15 @@ import java.util.concurrent.TimeUnit
 
 class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
-  @Name("users")
+  @name("users")
   case class User(id: Int, name: String) derives SQLRow
 
-  @Name("posts")
+  @name("posts")
   case class Post(
-    @PrimaryKey @AutoIncrement id: Int, 
-    @Name("user_id") @ForeignKey(classOf[User], "id", OnDelete.Cascade) @Unique userId: Int,   
-    @Index(Order.Desc) content: String,
-    @Index(Order.Asc) priority: Option[Int] = Some(0)
+    @pk @autoinc id: Int, 
+    @name("user_id") @fk(classOf[User], "id", OnDelete.Cascade) @unique userId: Int,   
+    @index(Order.Desc) content: String,
+    @index(Order.Asc) priority: Option[Int] = Some(0)
   ) derives SQLRow
 
 

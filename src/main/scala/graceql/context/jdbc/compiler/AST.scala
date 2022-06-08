@@ -594,7 +594,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
   object createQuery extends Parser[N]:
     def columnDef: Parser[CreateSpec[L,T]] = 
-      expr.column ~ embedded.typeLit ~ rep(columnModifier) ^^ {case Column(c) ~ TypeLit(tpe) ~ ms => CreateSpec.ColDef(c, tpe, ms)}
+      expr.column ~ embedded.typeLit ~ rep(columnmodifier) ^^ {case Column(c) ~ TypeLit(tpe) ~ ms => CreateSpec.ColDef(c, tpe, ms)}
     def fk: Parser[CreateSpec[L,T]] = 
       def onDel: Parser[OnDelete] = 
         def cascade = kw.cascade ^^ {_ => OnDelete.Cascade}
@@ -615,7 +615,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       CreateSpec.Unique(is.map{case Column(c) => c})
     }
 
-    def columnModifier: Parser[ColMod[L]] = 
+    def columnmodifier: Parser[ColMod[L]] = 
       def autoInc: Parser[ColMod[L]] = kw.auto_increment ^^ {_ => ColMod.AutoInc()}
       def notNull: Parser[ColMod[L]] = kw.not ~> kw.`null` ^^ {_ => ColMod.NotNull()}
       def default: Parser[ColMod[L]] = kw.default ~> embedded.literal ^^ {case Literal(l) => ColMod.Default(l)}

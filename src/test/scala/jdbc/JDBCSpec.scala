@@ -37,6 +37,8 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     val record4s: Table[V, Record4] = Table[V, Record4]()
     val record5s: Table[V, Record5] = Table[V, Record5]()
     val record6s: Table[V, Record6] = Table[V, Record6]()
+    val record7s: Table[V, Record7] = Table[V, Record7]()
+    val record8s: Table[V, Record8] = Table[V, Record8]()
 
     before {
       DriverManager.registerDriver(driver)
@@ -55,6 +57,12 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       vsql {
         record4s.delete()
       }.as[Try]
+      vsql {
+        record7s.delete()
+      }.as[Try]
+      vsql {
+        record8s.delete()
+      }.as[Try]      
     }
 
     after {
@@ -109,41 +117,69 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         record6s.create()
       }.isFailure shouldBe true
     }
+
+    it should "allow `UNIQUE` and `PRIMARY KEY` constraints on the same Integer column" in {
+      noException should be thrownBy {
+        vsql {
+          record7s.create()
+          record7s.delete()
+        }.run
+      }
+    }
+
+    // it should "allow `UNIQUE` and `PRIMARY KEY` constraints on the same String column" in {
+    //   noException should be thrownBy {
+    //     vsql {
+    //       record8s.create()
+    //       record8s.delete()
+    //     }.run
+    //   }
+    // }
 }
 
 object JDBCSpec:
   // To prevent some bizarre compiler error, classes are defined outside the test suite.
-  @Name("record1s")
+  @name("record1s")
   case class Record1(field1: Int, field2: String) derives SQLRow
 
-  @Name("record2s")
-  case class Record2(@Unique @Index field1: Int, field2: String) derives SQLRow
+  @name("record2s")
+  case class Record2(@unique @index field1: Int, field2: String) derives SQLRow
 
-  @Name("record3s")
+  @name("record3s")
   case class Record3(
-      @PrimaryKey @AutoIncrement field1: Int,
-      @ForeignKey(classOf[Record2], "field1", OnDelete.Cascade) @Unique @Index(
+      @pk @autoinc field1: Int,
+      @fk(classOf[Record2], "field1", OnDelete.Cascade) @unique @index(
         Order.Desc
       ) field2: Int,
-      @Name("my_field_3") field3: String,
-      @Index(Order.Asc) field4: Option[Int] = Some(0)
+      @name("my_field_3") field3: String,
+      @index(Order.Asc) field4: Option[Int] = Some(0)
   ) derives SQLRow
 
-  @Name("record4s")
+  @name("record4s")
   case class Record4(
-      @ForeignKey(classOf[Record2], "field1", OnDelete.SetDefault) field1: Int,
-      @ForeignKey(classOf[Record2], "field1", OnDelete.Restrict) field2: Int,
-      @ForeignKey(classOf[Record2], "field1", OnDelete.SetNull) field3: Option[
+      @fk(classOf[Record2], "field1", OnDelete.SetDefault) field1: Int,
+      @fk(classOf[Record2], "field1", OnDelete.Restrict) field2: Int,
+      @fk(classOf[Record2], "field1", OnDelete.SetNull) field3: Option[
         Int
       ]
   ) derives SQLRow
 
-  @Name("record5s")
+  @name("record5s")
   case class Record5(
-      @ForeignKey(classOf[Record2], "field1", OnDelete.SetNull) field1: Int
+      @fk(classOf[Record2], "field1", OnDelete.SetNull) field1: Int
   ) derives SQLRow
 
-  @Name("record6s")
+  @name("record6s")
   case class Record6(
-      @ForeignKey(classOf[Record2], "invalid") field1: Int
+      @fk(classOf[Record2], "invalid") field1: Int
   ) derives SQLRow
+  
+  @name("record7s")
+  case class Record7(
+      @pk @unique field1: Int
+  ) derives SQLRow  
+
+  @name("record8s")
+  case class Record8(
+      @pk @unique field1: String
+  ) derives SQLRow  

@@ -5,7 +5,6 @@ import graceql.core.*
 import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
 import graceql.quoted.CompileOps
-import dotty.tools.dotc.reporting.trace.force
 
 trait Commons(using val q: Quotes) {
   self =>
@@ -15,7 +14,7 @@ trait Commons(using val q: Quotes) {
       name: String,
       tpe: Type[A],
       nameOverride: Option[String],
-      mods: List[Modifier],
+      mods: List[modifier],
       default: Option[Expr[A]]
   ):
     def resolvedName = nameOverride.getOrElse(name).trim
@@ -37,14 +36,14 @@ trait Commons(using val q: Quotes) {
                 .map(Select(Ref(trep.typeSymbol.companionModule), _))
                 .map(_.asExprOf[t])
               
-              val nameOverride = annotationFor[Name](s).map(_.map(_.name))
+              val nameOverride = annotationFor[name](s).map(_.map(_.value))
               val mods = List(
-                annotationFor[PrimaryKey](s),
-                annotationFor[ForeignKey](s),
-                annotationFor[AutoIncrement](s),
-                annotationFor[Unique](s),
-                annotationFor[Index](s)
-              ).foldLeft[Either[List[String], List[Modifier]]](Right(Nil)){
+                annotationFor[pk](s),
+                annotationFor[fk](s),
+                annotationFor[autoinc](s),
+                annotationFor[unique](s),
+                annotationFor[index](s)
+              ).foldLeft[Either[List[String], List[modifier]]](Right(Nil)){
                   case (Right(ms), Right(m)) => Right(ms ++ m.toList)
                   case (Left(es), Left(e)) => Left(e :: es)
                   case (l@ Left(es), _) => l
@@ -77,7 +76,7 @@ trait Commons(using val q: Quotes) {
               fs.resolvedName,
               Type.of[a],
               for
-                d <- mods.collect { case _: AutoIncrement =>
+                d <- mods.collect { case _: autoinc =>
                   ColMod.AutoInc[Expr]()
                 } ++ astDefault.toList
               yield d
@@ -87,7 +86,7 @@ trait Commons(using val q: Quotes) {
               fs.resolvedName,
               Type.of[a],
               for
-                d <- mods.collect { case _: AutoIncrement =>
+                d <- mods.collect { case _: autoinc =>
                   ColMod.AutoInc[Expr]()
                 } ++ List(ColMod.NotNull[Expr]()) ++ astDefault.toList
               yield d
@@ -96,7 +95,7 @@ trait Commons(using val q: Quotes) {
       val pk: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          v <- spec.mods.collect { case _: PrimaryKey =>
+          v <- spec.mods.collect { case _: pk =>
               spec.resolvedName
             }
             .take(1)
@@ -107,7 +106,7 @@ trait Commons(using val q: Quotes) {
       val indices: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          v <- spec.mods.collect { case Index(ord) =>
+          v <- spec.mods.collect { case index(ord) =>
               (spec.resolvedName, ord)
             }
             .take(1)
@@ -118,7 +117,7 @@ trait Commons(using val q: Quotes) {
       val uniques: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          v <- spec.mods.collect { case _: Unique =>
+          v <- spec.mods.collect { case _: unique =>
               spec.resolvedName
             }
             .take(1)
@@ -127,7 +126,7 @@ trait Commons(using val q: Quotes) {
           case ks  => Some(CreateSpec.Unique(ks))
       val fks: List[CreateSpec[Expr, Type]] = (for
         spec <- specs
-        v <- spec.mods.collect { case ForeignKey(tpe: Type[_], ref, onDel) =>
+        v <- spec.mods.collect { case fk(tpe: Type[_], ref, onDel) =>
             tpe match
               case '[a] =>
                 CreateSpec.FK[Expr, Type](
@@ -157,20 +156,12 @@ trait Commons(using val q: Quotes) {
     preprocess('{ $f(using $p) })
 
   def tableName[A](using ta: Type[A]): Either[String, String] =
-    for
-      annTerm <- TypeRepr
-        .of(using ta)
-        .typeSymbol
-        .getAnnotation(TypeRepr.of[Name].typeSymbol)
-        .toRight(
-          s"Missing ${Type.show[Name]} annotation for type ${Type.show[A]}"
+    for 
+      ann <- annotationFor[name](TypeRepr.of(using ta).typeSymbol)
+      name <- ann.toRight(
+          s"Missing ${Type.show[name]} annotation for type ${Type.show[A]}"
         )
-      ann <- Expr
-        .unapply(annTerm.asExprOf[Name])
-        .toRight(
-          s"Static annotation ${Type.show[Name]} for type ${Type.show[A]} cannot be unlifted. Annotation must be constructed using literal values"
-        )
-    yield ann.name
+    yield name.value
 
   def annotationFor[T <: scala.annotation.StaticAnnotation](
       symb: Symbol
@@ -235,7 +226,7 @@ trait Commons(using val q: Quotes) {
             mod <- fs.mods
             err <- {
               mod match             
-                case ForeignKey(tpe: Type[_], field, onDel) =>
+                case fk(tpe: Type[_], field, onDel) =>
                   val onDelErrors = (fs.tpe, onDel) match
                     case ('[Option[a]], OnDelete.SetNull) => Nil
                     case (_, OnDelete.SetNull) => List("`OnDelete.SetNull` can only be specified for nullable columns")
