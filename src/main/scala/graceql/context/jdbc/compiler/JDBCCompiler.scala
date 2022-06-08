@@ -101,12 +101,13 @@ trait VendorTreeCompiler[V]:
     object checks:
       def schemas(tree: Node[Expr, Type]): Unit =
         tree
-          .fold(Nil)(msgs => {
-            case Node.Table(_, tpe): Node.Table[Expr, Type, a] => TypeRepr.of[a]
+          .fold[List[TypeRepr]](Nil)(tps => {
+            case Node.Table(_, tpe) => TypeRepr.of(using tpe) :: tps
           })
           .distinct
           .foldLeft[List[String]](Nil) { (msgs, trep) => 
-              validateSchema(using trep.asType).swap.toOption.toList ++ msgs   
+              trep.asType match 
+                case '[a] => validateSchema[a].swap.toOption.toList ++ msgs   
           } match
             case Nil  => ()
             case errs => throw GraceException(errs.mkString("\n"))
