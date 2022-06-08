@@ -12,5 +12,16 @@ class PostgreSQLSpec
       org.postgresql.Driver()
     ) {
 
-    runTests()
+    commonDDLTests()
+
+    it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same column" in {
+        vsql {
+          record2s.create()
+          record8s.create()
+          record9s.create()           
+          record9s.delete()         
+          record8s.delete()
+          record2s.delete()                              
+        }.run
+    }    
 }

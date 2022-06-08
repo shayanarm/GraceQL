@@ -6,18 +6,56 @@ import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
 import graceql.quoted.CompileOps
 
-trait Commons(using val q: Quotes) {
+trait TypeCheckingFramework(using val q: Quotes) {
   self =>
   import q.reflect.*
+
+  extension [L, R](es: List[Either[L, R]])
+    def sequence: Either[List[L], List[R]] =
+      es.foldLeft[Either[List[L], List[R]]](Right(Nil)) {
+        case (Right(ms), Right(m)) => Right(m :: ms)
+        case (Left(es), Left(e))   => Left(e :: es)
+        case (l @ Left(es), _)     => l
+        case (_, Left(e))          => Left(List(e))
+      }.map(_.reverse)
+
+  extension (tpe: Type[_])
+    def no: Type[_] =
+      tpe match
+        case '[Option[a]] => Type.of[a]
+        case _            => tpe
+  extension (trep: TypeRepr)
+    def no: TypeRepr =
+      trep.asType match
+        case '[a] => TypeRepr.of(using Type.of[a].no)
+
+  case class ValidatedSchema[A](
+      name: String,
+      compositeUniques: List[String],
+      fieldSpecs: List[FieldSpec[_]]
+  ):
+    def forAST: List[CreateSpec[Expr, Type]] =
+      val renamedUniques = compositeUniques
+        .flatMap { n =>
+          fieldSpecs.collect {
+            case fs if fs.name == n => fs.resolvedName
+          }
+        }
+      (FieldSpec.forAST(fieldSpecs), renamedUniques) match
+        case (l, Nil) => l
+        case (l, r)   => l :+ CreateSpec.Uniques[Expr, Type](r)
 
   case class FieldSpec[A](
       name: String,
       tpe: Type[A],
-      nameOverride: Option[String],
       mods: List[modifier],
       default: Option[Expr[A]]
   ):
     def resolvedName = nameOverride.getOrElse(name).trim
+    def nameOverride = mods.collectFirst { case ann: name =>
+      ann.value
+    }
+
   object FieldSpec:
     def forType[A](using
         Type[A]
@@ -35,49 +73,32 @@ trait Commons(using val q: Quotes) {
                 .headOption
                 .map(Select(Ref(trep.typeSymbol.companionModule), _))
                 .map(_.asExprOf[t])
-              
-              val nameOverride = annotationFor[name](s).map(_.map(_.value))
-              val mods = List(
+              List(
+                annotationFor[name](s),
                 annotationFor[pk](s),
                 annotationFor[fk](s),
                 annotationFor[autoinc](s),
                 annotationFor[unique](s),
                 annotationFor[index](s)
-              ).foldLeft[Either[List[String], List[modifier]]](Right(Nil)){
-                  case (Right(ms), Right(m)) => Right(ms ++ m.toList)
-                  case (Left(es), Left(e)) => Left(e :: es)
-                  case (l@ Left(es), _) => l
-                  case (_ , Left(e)) => Left(List(e))
-              }
-
-              (nameOverride, mods) match
-                case (Right(no), Right(ms)) =>
-                  Right(FieldSpec[t](s.name, Type.of[t], no, ms, default))
-                case (Left(e1), Left(e2)) => Left(e1 :: e2)
-                case (Left(e), _)         => Left(List(e))
-                case (_, Left(e))         => Left(e)
+              ).sequence
+                .map(_.flatten)
+                .map { mods =>
+                  FieldSpec[t](s.name, Type.of[t], mods, default)
+                }
         )
+      fields.sequence.left.map(_.flatten)
 
-      fields.foldRight[Either[List[String], List[FieldSpec[_ <: Any]]]](
-        Right(Nil)
-      ) { (i, c) =>
-        (c, i) match
-          case (Right(fs), Right(f))   => Right(f :: fs)
-          case (Left(es), Left(e))     => Left(e ++ es)
-          case (l @ Left(_), Right(_)) => l
-          case (Right(_), Left(e))     => Left(e)
-      }
     def forAST(specs: List[FieldSpec[_]]): List[CreateSpec[Expr, Type]] =
-      val colDefs = specs.map { case fs @ FieldSpec(_, tpe, _, mods, default) =>
+      val colDefs = specs.map { case fs @ FieldSpec(_, tpe, mods, default) =>
         val astDefault = default.map(ColMod.Default(_))
         tpe match
           case '[Option[a]] =>
             CreateSpec.ColDef[Expr, Type, a](
               fs.resolvedName,
               Type.of[a],
-              for
-                d <- mods.collect { case _: autoinc =>
-                  ColMod.AutoInc[Expr]()
+              for d <- mods.collect {
+                  case _: autoinc => ColMod.AutoInc[Expr]()
+                  case _: unique  => ColMod.Unique[Expr]()
                 } ++ astDefault.toList
               yield d
             )
@@ -85,9 +106,9 @@ trait Commons(using val q: Quotes) {
             CreateSpec.ColDef[Expr, Type, a](
               fs.resolvedName,
               Type.of[a],
-              for
-                d <- mods.collect { case _: autoinc =>
-                  ColMod.AutoInc[Expr]()
+              for d <- mods.collect {
+                  case _: autoinc => ColMod.AutoInc[Expr]()
+                  case _: unique  => ColMod.Unique[Expr]()
                 } ++ List(ColMod.NotNull[Expr]()) ++ astDefault.toList
               yield d
             )
@@ -95,10 +116,9 @@ trait Commons(using val q: Quotes) {
       val pk: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          v <- spec.mods.collect { case _: pk =>
-              spec.resolvedName
-            }
-            .take(1)
+          v <- spec.mods.collectFirst { case _: pk =>
+            spec.resolvedName
+          }.toList
         yield v) match
           case Nil => None
           case ks  => Some(CreateSpec.PK(ks))
@@ -106,10 +126,9 @@ trait Commons(using val q: Quotes) {
       val indices: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          v <- spec.mods.collect { case index(ord) =>
-              (spec.resolvedName, ord)
-            }
-            .take(1)
+          v <- spec.mods.collectFirst { case index(ord) =>
+            (spec.resolvedName, ord)
+          }.toList
         yield v) match
           case Nil  => None
           case idxs => Some(CreateSpec.Index(idxs))
@@ -117,28 +136,26 @@ trait Commons(using val q: Quotes) {
       val uniques: Option[CreateSpec[Expr, Type]] =
         (for
           spec <- specs
-          v <- spec.mods.collect { case _: unique =>
-              spec.resolvedName
-            }
-            .take(1)
+          v <- spec.mods.collectFirst { case _: unique =>
+            spec.resolvedName
+          }.toList
         yield v) match
           case Nil => None
-          case ks  => Some(CreateSpec.Unique(ks))
+          case ks  => Some(CreateSpec.Uniques(ks))
       val fks: List[CreateSpec[Expr, Type]] = (for
         spec <- specs
-        v <- spec.mods.collect { case fk(tpe: Type[_], ref, onDel) =>
-            tpe match
-              case '[a] =>
-                CreateSpec.FK[Expr, Type](
-                  spec.resolvedName,
-                  Expr(require.tableName[a]),
-                  ref,
-                  onDel
-                )
-          }
-          .take(1)
+        v <- spec.mods.collectFirst { case fk(tpe: Type[_], ref, onDel) =>
+          tpe match
+            case '[a] =>
+              CreateSpec.FK[Expr, Type](
+                spec.resolvedName,
+                Expr(require.tableName[a]),
+                ref,
+                onDel
+              )
+        }.toList
       yield v)
-      colDefs ++ pk.toList ++ fks ++ indices.toList ++ uniques.toList
+      colDefs ++ pk.toList ++ fks ++ indices.toList
 
   def preprocess[A](
       e: Expr[A]
@@ -155,13 +172,16 @@ trait Commons(using val q: Quotes) {
   )(using Type[P], Type[A]): Expr[A] =
     preprocess('{ $f(using $p) })
 
+  def tableSchema[A](using ta: Type[A]): Either[String, schema] =
+    for
+      ann <- annotationFor[schema](TypeRepr.of(using ta).typeSymbol)
+      sch <- ann.toRight(
+        s"Missing ${Type.show[schema]} annotation for type ${Type.show[A]}"
+      )
+    yield sch
+
   def tableName[A](using ta: Type[A]): Either[String, String] =
-    for 
-      ann <- annotationFor[name](TypeRepr.of(using ta).typeSymbol)
-      name <- ann.toRight(
-          s"Missing ${Type.show[name]} annotation for type ${Type.show[A]}"
-        )
-    yield name.value
+    tableSchema[A].map(_.name)
 
   def annotationFor[T <: scala.annotation.StaticAnnotation](
       symb: Symbol
@@ -172,13 +192,14 @@ trait Commons(using val q: Quotes) {
         Expr
           .unapply(term.asExprOf[T])
           .toRight(
-            s"Static annotation ${Type.show[T]} for field ${symb.toString} cannot be unlifted. Annotation must be constructed using literal values"
+            s"Static annotation ${Type.show[T]} for field ${symb.toString} cannot be unlifted. " +
+              "Annotation must be constructed using literal values"
           )
           .map(Some(_))
       }
     yield v
 
-  def schemaErrors[A](using Type[A]): Option[String] =
+  def validateSchema[A](using Type[A]): Either[String, ValidatedSchema[A]] =
     val r = for
       mirr <- Expr
         .summon[SQLEncoding.Of[A]]
@@ -191,7 +212,8 @@ trait Commons(using val q: Quotes) {
               s"Target type must derive ${TypeRepr.of[SQLRow].typeSymbol.name} to be qualified as a table."
             )
           )
-      tname <- tableName[A].left.map(List(_))
+      sch <- tableSchema[A].left.map(List(_))
+      schema(tname, uniques*) = sch
       fieldSpecs <- FieldSpec.forType[A]
       _ <- fieldSpecs match
         case Nil =>
@@ -200,13 +222,12 @@ trait Commons(using val q: Quotes) {
           )
         case fields => Right(fields)
       _ <-
-        val columnTypeErr = fieldSpecs.exists {
-          case FieldSpec(_, tr, _, _, d) =>
-            tr match
-              case '[a] =>
-                require.instance[SQLEncoding.Of[a]] match
-                  case '{ $row: SQLRow[a] } => true
-                  case _                    => false
+        val columnTypeErr = fieldSpecs.exists { case FieldSpec(_, tr, _, d) =>
+          tr match
+            case '[a] =>
+              require.instance[SQLEncoding.Of[a]] match
+                case '{ $row: SQLRow[a] } => true
+                case _                    => false
         } match
           case true =>
             Some(
@@ -214,28 +235,51 @@ trait Commons(using val q: Quotes) {
             )
           case _ => None
         val fieldNameErrors = fieldSpecs.flatMap { fs =>
-            if fs.resolvedName.isBlank then
-              List(
-                s"Resolved SQL column name for the case field `${fs.name}` cannot be blank"
-              )
-            else Nil
+          if fs.resolvedName.isBlank then
+            List(
+              s"Resolved SQL column name for the case field `${fs.name}` cannot be blank"
+            )
+          else Nil
         }
         val modErrs: List[String] =
           for
             fs <- fieldSpecs
             mod <- fs.mods
             err <- {
-              mod match             
+              mod match
                 case fk(tpe: Type[_], field, onDel) =>
                   val onDelErrors = (fs.tpe, onDel) match
                     case ('[Option[a]], OnDelete.SetNull) => Nil
-                    case (_, OnDelete.SetNull) => List("`OnDelete.SetNull` can only be specified for nullable columns")
+                    case (_, OnDelete.SetNull) =>
+                      List(
+                        "`OnDelete.SetNull` can only be specified for nullable columns"
+                      )
                     case _ => Nil
                   val fkErrors = tpe match
-                    case '[a] => TypeRepr.of[a].typeSymbol.caseFields.exists(_.name == field) match
-                      case true => Nil
-                      case false => List(s"Referenced foreign key column `$field` on class ${Type.show[a]} does not exist")
-                  onDelErrors ++ fkErrors  
+                    case '[a] =>
+                      TypeRepr
+                        .of[a]
+                        .typeSymbol
+                        .caseFields
+                        .find(_.name == field) match
+                        case Some(symb) =>
+                          TypeRepr.of[a].memberType(symb) match
+                            case reftrep
+                                if reftrep.no == TypeRepr.of(using fs.tpe).no =>
+                              Nil
+                            case reftrep =>
+                              List(
+                                s"The Non-Option type of foreign key field `${fs.name}: ${Type
+                                    .show(using fs.tpe.no)}` does not match that " +
+                                  s"of its referenced field `${field}: ${Type
+                                      .show(using reftrep.no.asType)}` of the " +
+                                  s"case class `${Type.show(using tpe)}`"
+                              )
+                        case None =>
+                          List(
+                            s"Referenced foreign key column `$field` on class ${Type.show[a]} does not exist"
+                          )
+                  onDelErrors ++ fkErrors
                 case _ => Nil
             }
           yield err
@@ -243,8 +287,8 @@ trait Commons(using val q: Quotes) {
         columnTypeErr.toList ++ fieldNameErrors ++ modErrs match
           case Nil  => Right(())
           case errs => Left(errs)
-    yield ()
-    r.swap.toOption.map(
+    yield ValidatedSchema[A](tname, uniques.toList, fieldSpecs)
+    r.left.map(
       _.map(e => s"-  $e").mkString(
         s"Schema validation failed for type ${Type.show[A]}:\n",
         "\n",
@@ -254,7 +298,8 @@ trait Commons(using val q: Quotes) {
 
   object assertions:
     def validSchema[A](using Type[A]): Unit =
-      self.schemaErrors[A].foreach(msg => throw GraceException(msg))
+      require.validSchema[A]
+      ()
 
   object require:
     def instance[T](using Type[T]): Expr[T] =
@@ -264,8 +309,15 @@ trait Commons(using val q: Quotes) {
           throw GraceException(
             s"Could not obtain an instance for ${Type.show[T]}"
           )
-    def tableName[T](using Type[T]): String =
-      self.tableName[T] match
+
+    def validSchema[T](using Type[T]): ValidatedSchema[T] = 
+      self.validateSchema[T] match
+        case Right(n)  => n
+        case Left(err) => throw GraceException(err)
+
+    def tableName[T](using Type[T]): String = tableSchema[T].name
+    def tableSchema[T](using Type[T]): schema =
+      self.tableSchema[T] match
         case Right(n)  => n
         case Left(err) => throw GraceException(err)
     def fieldSpecs[T](using Type[T]): List[FieldSpec[_]] =

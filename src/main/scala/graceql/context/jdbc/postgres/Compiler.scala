@@ -12,14 +12,15 @@ object Compiler extends VendorTreeCompiler[PostgreSQL]:
   protected def binary(recurse: Node[Expr, Type] => Expr[String])(using Quotes): PartialFunction[Node[Expr,Type], Expr[String]] =
     {
       case CreateTable(table, Some(specs)) => 
-        val specsStr = specs.collect {
+        val specStrings = specs.collect {
           case CreateSpec.ColDef(colName ,tpe, mods) => 
-            val modsStr = mods.collect {
+            val modStrings = mods.collect {
               case ColMod.Default(v) => '{"DEFAULT " + ${recurse(Literal(v))} }
               case ColMod.NotNull() => '{"NOT NULL"}
+              case ColMod.Unique() => '{"UNIQUE"}              
             }
             val columnType = if mods.exists(m => m.isInstanceOf[ColMod.AutoInc[Expr]]) then serialColumnType(tpe) else typeString(tpe)
-            '{ ${Expr(colName)} + " " + ${columnType} + ${Expr.ofList(modsStr)}.mkString(" ", " ", "")}
+            '{ ${Expr(colName)} + " " + ${columnType} + ${Expr.ofList(modStrings)}.mkString(" ", " ", "")}
           case CreateSpec.PK(columns) => '{"PRIMARY KEY (" + ${Expr(columns.mkString(", "))} + ")"}
           case CreateSpec.FK(localCol, remoteTableName, remoteColName, onDelete) =>
             val onDeleteStr = onDelete match
@@ -28,11 +29,11 @@ object Compiler extends VendorTreeCompiler[PostgreSQL]:
               case OnDelete.SetDefault => '{"SET DEFAULT"}
               case OnDelete.SetNull => '{"SET NULL"}
             '{"FOREIGN KEY (" + ${Expr(localCol)} + ") REFERENCES " + $remoteTableName + "(" + ${Expr(remoteColName)} + ") ON DELETE " + $onDeleteStr }
-          case CreateSpec.Unique(indices) =>
-            val indicesStr = indices.map(Expr(_))
-            '{"UNIQUE (" + ${ Expr.ofList(indicesStr) }.mkString(", ") + ")"}              
+          case CreateSpec.Uniques(indices) =>
+            val compUniques = indices.map(Expr(_))
+            '{"UNIQUE (" + ${ Expr.ofList(compUniques) }.mkString(", ") + ")"}              
         }  
-        val createIndexStrs = specs.collect {
+        val indexStrings = specs.collect {
           case CreateSpec.Index(indices) =>
             indices.map {
               case (c, o) => 
@@ -43,8 +44,8 @@ object Compiler extends VendorTreeCompiler[PostgreSQL]:
                 '{"CREATE INDEX " + ${tname} + "_" + ${Expr(c)} + "_" + ${Expr(orderStr)} + " ON " + ${recurse(table)} + " (" + ${Expr(c)} + " " + ${Expr(orderStr)} + ")"}      
             }
         }.flatten
-        val createTableStr = '{"CREATE TABLE " + ${ recurse(table) } + " (" + ${ Expr.ofList(specsStr) }.mkString(", ") + ")"}
-        '{${Expr.ofList(createTableStr :: createIndexStrs)}.mkString("; ")}
+        val createTableStr = '{"CREATE TABLE " + ${ recurse(table) } + " (" + ${ Expr.ofList(specStrings) }.mkString(", ") + ")"}
+        '{${Expr.ofList(createTableStr :: indexStrings)}.mkString("; ")}
     }
 
   def serialColumnType(using q: Quotes)(tpe: Type[_]): Expr[String] =

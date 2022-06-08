@@ -16,6 +16,7 @@ import scala.concurrent.Promise
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
+import scala.util.Success
 
 trait JDBCSpec[V, S[+X] <: Iterable[X]](
     val vendor: String,
@@ -27,50 +28,50 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     with should.Matchers
     with BeforeAndAfter {
   import JDBCSpec.*
+
   inline def vsql = sql[V, S]
-  inline def runTests()(using ctx: JDBCQueryContext[V, S]) =
-    implicit var connection: ctx.Connection = null
 
-    val record1s: Table[V, Record1] = Table[V, Record1]()
-    val record2s: Table[V, Record2] = Table[V, Record2]()
-    val record3s: Table[V, Record3] = Table[V, Record3]()
-    val record4s: Table[V, Record4] = Table[V, Record4]()
-    val record5s: Table[V, Record5] = Table[V, Record5]()
-    val record6s: Table[V, Record6] = Table[V, Record6]()
-    val record7s: Table[V, Record7] = Table[V, Record7]()
-    val record8s: Table[V, Record8] = Table[V, Record8]()
-
-    before {
+  def newConnection(): java.sql.Connection = 
       DriverManager.registerDriver(driver)
-      connection = DriverManager.getConnection(url, user.orNull, password)
+      DriverManager.getConnection(url, user.orNull, password)
 
-      // delete tables if any exists
-      vsql {
-        record1s.delete()
-      }.as[Try]
-      vsql {
-        record2s.delete()
-      }.as[Try]
-      vsql {
-        record3s.delete()
-      }.as[Try]
-      vsql {
-        record4s.delete()
-      }.as[Try]
-      vsql {
-        record7s.delete()
-      }.as[Try]
-      vsql {
-        record8s.delete()
-      }.as[Try]      
-    }
+  implicit var connection: java.sql.Connection = null
 
-    after {
-      connection.close()
-    }
+  val record1s: Table[V, Record1] = Table[V, Record1]()
+  val record2s: Table[V, Record2] = Table[V, Record2]()
+  val record3s: Table[V, Record3] = Table[V, Record3]()
+  val record4s: Table[V, Record4] = Table[V, Record4]()
+  val record5s: Table[V, Record5] = Table[V, Record5]()
+  val record6s: Table[V, Record6] = Table[V, Record6]()
+  val record7s: Table[V, Record7] = Table[V, Record7]()
+  val record8s: Table[V, Record8] = Table[V, Record8]()
+  val record9s: Table[V, Record9] = Table[V, Record9]()  
+
+  before {
+    connection = newConnection()     
+  }
+
+  after {
+    connection.close()
+  }
+
+  inline def commonDDLTests()(using ctx: JDBCQueryContext[V, S]) =
+
+    // delete tables if any exists
+    List(
+      vsql.tried {record1s.delete()}.toOption,
+      vsql.tried {record2s.delete()}.toOption,
+      vsql.tried {record3s.delete()}.toOption,
+      vsql.tried {record4s.delete()}.toOption,
+      vsql.tried {record5s.delete()}.toOption,
+      vsql.tried {record6s.delete()}.toOption,
+      vsql.tried {record7s.delete()}.toOption,
+      vsql.tried {record8s.delete()}.toOption,
+      vsql.tried {record9s.delete()}.toOption
+    ).flatten.flatMap(_.as[Option].toList)
 
     s"""
-    The high-level JDBC context for $vendor
+    The high-level JDBC context for $vendor on DDL commands
     """ should "create and drop a simple table (without annotations)" in {
       noException should be thrownBy {
         vsql {
@@ -118,34 +119,22 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       }.isFailure shouldBe true
     }
 
-    it should "allow `UNIQUE` and `PRIMARY KEY` constraints on the same Integer column" in {
-      noException should be thrownBy {
-        vsql {
-          record7s.create()
-          record7s.delete()
-        }.run
-      }
+    it should "not allow foreign key constraints with mismatched types" in {
+      vsql.tried {
+        record7s.create()
+      }.isFailure shouldBe true
     }
-
-    // it should "allow `UNIQUE` and `PRIMARY KEY` constraints on the same String column" in {
-    //   noException should be thrownBy {
-    //     vsql {
-    //       record8s.create()
-    //       record8s.delete()
-    //     }.run
-    //   }
-    // }
 }
 
 object JDBCSpec:
   // To prevent some bizarre compiler error, classes are defined outside the test suite.
-  @name("record1s")
+  @schema("record1s")
   case class Record1(field1: Int, field2: String) derives SQLRow
 
-  @name("record2s")
-  case class Record2(@unique @index field1: Int, field2: String) derives SQLRow
+  @schema("record2s")
+  case class Record2(@unique @index field1: Int, @unique field2: String) derives SQLRow
 
-  @name("record3s")
+  @schema("record3s")
   case class Record3(
       @pk @autoinc field1: Int,
       @fk(classOf[Record2], "field1", OnDelete.Cascade) @unique @index(
@@ -155,7 +144,7 @@ object JDBCSpec:
       @index(Order.Asc) field4: Option[Int] = Some(0)
   ) derives SQLRow
 
-  @name("record4s")
+  @schema("record4s")
   case class Record4(
       @fk(classOf[Record2], "field1", OnDelete.SetDefault) field1: Int,
       @fk(classOf[Record2], "field1", OnDelete.Restrict) field2: Int,
@@ -164,22 +153,27 @@ object JDBCSpec:
       ]
   ) derives SQLRow
 
-  @name("record5s")
+  @schema("record5s")
   case class Record5(
       @fk(classOf[Record2], "field1", OnDelete.SetNull) field1: Int
   ) derives SQLRow
 
-  @name("record6s")
+  @schema("record6s")
   case class Record6(
       @fk(classOf[Record2], "invalid") field1: Int
   ) derives SQLRow
   
-  @name("record7s")
+  @schema("record7s")
   case class Record7(
-      @pk @unique field1: Int
+      @fk(classOf[Record2], "field1") field1: String
   ) derives SQLRow  
 
-  @name("record8s")
+  @schema("record8s")
   case class Record8(
-      @pk @unique field1: String
+      @pk @unique @index @fk(classOf[Record2], "field1") field1: Int
+  ) derives SQLRow  
+
+  @schema("record9s")
+  case class Record9(
+      @pk @index @unique @fk(classOf[Record2], "field2") field1: String
   ) derives SQLRow  

@@ -78,12 +78,13 @@ enum CreateSpec[L[_],T[_]]:
   case PK[L[_], T[_]](columns: List[String]) extends CreateSpec[L,T]
   case FK[L[_], T[_]](localCol: String, remoteTableName: L[String], remoteColName: String, onDelete: OnDelete) extends CreateSpec[L,T]
   case Index[L[_], T[_]](indices: List[(String, Order)]) extends CreateSpec[L,T]
-  case Unique[L[_], T[_]](indices: List[String]) extends CreateSpec[L,T]
+  case Uniques[L[_], T[_]](indices: List[String]) extends CreateSpec[L,T]
 
 enum ColMod[L[_]]:
   case NotNull[L[_]]() extends ColMod[L]
   case AutoInc[L[_]]() extends ColMod[L]
   case Default[L[_], A](value: L[A]) extends ColMod[L]
+  case Unique[L[_]]() extends ColMod[L]
 
 enum OnDelete:
   case Cascade extends OnDelete
@@ -399,11 +400,12 @@ enum Node[L[_], T[_]]:
             case ColMod.NotNull() => ColMod.NotNull()
             case ColMod.AutoInc() => ColMod.AutoInc()
             case ColMod.Default(v) => ColMod.Default(fl(v))
+            case ColMod.Unique() => ColMod.Unique()
           })            
         case CreateSpec.PK(ks) => CreateSpec.PK(ks)
         case CreateSpec.FK(l, tname, r, od) => CreateSpec.FK(l, fl(tname), r, od)
         case CreateSpec.Index(is) => CreateSpec.Index(is)
-        case CreateSpec.Unique(is) => CreateSpec.Unique(is)
+        case CreateSpec.Uniques(is) => CreateSpec.Uniques(is)
       }))
 
   object transform:
@@ -594,7 +596,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
   object createQuery extends Parser[N]:
     def columnDef: Parser[CreateSpec[L,T]] = 
-      expr.column ~ embedded.typeLit ~ rep(columnmodifier) ^^ {case Column(c) ~ TypeLit(tpe) ~ ms => CreateSpec.ColDef(c, tpe, ms)}
+      expr.column ~ embedded.typeLit ~ rep(columnModifier) ^^ {case Column(c) ~ TypeLit(tpe) ~ ms => CreateSpec.ColDef(c, tpe, ms)}
     def fk: Parser[CreateSpec[L,T]] = 
       def onDel: Parser[OnDelete] = 
         def cascade = kw.cascade ^^ {_ => OnDelete.Cascade}
@@ -612,14 +614,15 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     }
 
     def unique: Parser[CreateSpec[L,T]] = kw.unique ~> parens(true)(rep1sep(expr.column, kw.`,`)) ^^ {is => 
-      CreateSpec.Unique(is.map{case Column(c) => c})
+      CreateSpec.Uniques(is.map{case Column(c) => c})
     }
 
-    def columnmodifier: Parser[ColMod[L]] = 
+    def columnModifier: Parser[ColMod[L]] = 
       def autoInc: Parser[ColMod[L]] = kw.auto_increment ^^ {_ => ColMod.AutoInc()}
       def notNull: Parser[ColMod[L]] = kw.not ~> kw.`null` ^^ {_ => ColMod.NotNull()}
       def default: Parser[ColMod[L]] = kw.default ~> embedded.literal ^^ {case Literal(l) => ColMod.Default(l)}
-      autoInc | notNull | default
+      def unique: Parser[ColMod[L]] = kw.unique ^^ {_ => ColMod.Unique()}
+      autoInc | notNull | default | unique
 
     def columnSpec: Parser[CreateSpec[L,T]] = fk | pk | index | unique | columnDef
     def apply(v: Input): ParseResult[N] =

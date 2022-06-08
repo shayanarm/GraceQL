@@ -18,13 +18,13 @@ import java.util.concurrent.TimeUnit
 
 class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
 
-  @name("users")
+  @schema("users")
   case class User(id: Int, name: String) derives SQLRow
 
-  @name("posts")
+  @schema(name="posts", compositeUniques="userId", "content")
   case class Post(
     @pk @autoinc id: Int, 
-    @name("user_id") @fk(classOf[User], "id", OnDelete.Cascade) @unique userId: Int,   
+    @name("user_id") @fk(classOf[User], "id", OnDelete.Cascade) userId: Int,   
     @index(Order.Desc) content: String,
     @index(Order.Asc) priority: Option[Int] = Some(0)
   ) derives SQLRow
@@ -274,7 +274,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     parseAssert {
       native"""create table ${posts.lift}""".unlift
     } {
-      "CREATE TABLE posts (id Int AUTO_INCREMENT NOT NULL, user_id Int NOT NULL, content String NOT NULL, priority Int DEFAULT 0, PRIMARY KEY (id), FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, INDEX (content DESC, priority ASC), UNIQUE (user_id))"
+      "CREATE TABLE posts (id Int AUTO_INCREMENT NOT NULL, user_id Int NOT NULL, content String NOT NULL, priority Int DEFAULT 0, PRIMARY KEY (id), FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, INDEX (content DESC, priority ASC), UNIQUE (user_id, content))"
     }
   }
 }
