@@ -46,6 +46,9 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
   val record7s: Table[V, Record7] = Table[V, Record7]()
   val record8s: Table[V, Record8] = Table[V, Record8]()
   val record9s: Table[V, Record9] = Table[V, Record9]()  
+  val record10s: Table[V, Record10] = Table[V, Record10]()  
+  val record11s: Table[V, Record11] = Table[V, Record11]()  
+  val record12s: Table[V, Record12] = Table[V, Record12]()  
 
   before {
     connection = newConnection()     
@@ -55,24 +58,35 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     connection.close()
   }
 
-  inline def commonDDLTests()(using ctx: JDBCQueryContext[V, S]) =
+  inline def withCleanup[A](block: => A)(using ctx: JDBCQueryContext[V, S]): A =
+    def clean() = 
+      // delete tables if any exists
+      List(
+        vsql.tried {record1s.delete()}.toOption,
+        vsql.tried {record2s.delete()}.toOption,
+        vsql.tried {record3s.delete()}.toOption,
+        vsql.tried {record4s.delete()}.toOption,
+        vsql.tried {record5s.delete()}.toOption,
+        vsql.tried {record6s.delete()}.toOption,
+        vsql.tried {record7s.delete()}.toOption,
+        vsql.tried {record8s.delete()}.toOption,
+        vsql.tried {record9s.delete()}.toOption,
+        vsql.tried {record10s.delete()}.toOption,
+        vsql.tried {record11s.delete()}.toOption,
+        vsql.tried {record12s.delete()}.toOption
+      ).flatten.flatMap(_.as[Option].toList)
 
-    // delete tables if any exists
-    List(
-      vsql.tried {record1s.delete()}.toOption,
-      vsql.tried {record2s.delete()}.toOption,
-      vsql.tried {record3s.delete()}.toOption,
-      vsql.tried {record4s.delete()}.toOption,
-      vsql.tried {record5s.delete()}.toOption,
-      vsql.tried {record6s.delete()}.toOption,
-      vsql.tried {record7s.delete()}.toOption,
-      vsql.tried {record8s.delete()}.toOption,
-      vsql.tried {record9s.delete()}.toOption
-    ).flatten.flatMap(_.as[Option].toList)
+    clean()
+    try 
+      block
+    finally  
+      clean()  
+
+  inline def commonDDLTests()(using ctx: JDBCQueryContext[V, S]) =
 
     s"""
     The high-level JDBC context for $vendor on DDL commands
-    """ should "create and drop a simple table (without annotations)" in {
+    """ should "create and drop a simple table (without annotations)" in withCleanup {
       noException should be thrownBy {
         vsql {
           record1s.create()
@@ -124,6 +138,24 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         record7s.create()
       }.isFailure shouldBe true
     }
+
+    it should "not allow creation of tables with blank schema names" in {
+      vsql.tried {
+        record10s.create()
+      }.isFailure shouldBe true
+    }    
+
+    it should "not allow creation of tables with missing schema annotation" in {
+      vsql.tried {
+        record11s.create()
+      }.isFailure shouldBe true
+    }
+
+    it should "not allow creation of tables with blank field name(s)" in {
+      vsql.tried {
+        record12s.create()
+      }.isFailure shouldBe true
+    }    
 }
 
 object JDBCSpec:
@@ -177,3 +209,17 @@ object JDBCSpec:
   case class Record9(
       @pk @index @unique @fk(classOf[Record2], "field2") field1: String
   ) derives SQLRow  
+
+  @schema("")
+  case class Record10(
+      field1: String
+  ) derives SQLRow  
+
+  case class Record11(
+      field1: String
+  ) derives SQLRow  
+
+  @schema("record12s")
+  case class Record12(
+      @name(" ") field1: String
+  ) derives SQLRow    

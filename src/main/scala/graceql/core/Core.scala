@@ -8,7 +8,6 @@ import scala.concurrent.ExecutionContext
 import scala.compiletime.summonInline
 import scala.concurrent.Promise
 import scala.util.Try
-import scala.Conversion
 
 class GraceException(
     val message: Option[String] = None,
@@ -53,7 +52,6 @@ trait Capabilities[N[+_]]:
 
   extension [A](a: A)
     def lift: N[A]
-    inline def |>[B](f: A => B) = f(a)
 
 final type Read[R[_], M[_], T] = T match
   case (k, grpd)       => (k, Read[R, M, grpd])

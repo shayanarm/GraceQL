@@ -7,7 +7,8 @@ import scala.util.{Try, Success, Failure}
 object CompileOps {
 
   def tryCompile[A](thunk: => Expr[A])(using Quotes, Type[A]): Expr[Try[A]] =
-    try
+    import quotes.reflect.*
+    try   
       '{scala.util.Success($thunk)}
     catch
       case e =>

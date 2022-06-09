@@ -9,6 +9,12 @@ import scala.util.Try
 trait VendorTreeCompiler[V]:
   self =>
 
+  def delegate[S[+X] <: Iterable[X]](using
+      Quotes,
+      Type[V],
+      Type[S]
+  ) : Delegate[S] = new Delegate[S]
+
   def tryCompile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
   )(using
@@ -30,7 +36,7 @@ trait VendorTreeCompiler[V]:
     import q.reflect.{Statement => _, *}
     e match
       case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
-        Delegate[S].compile[A](body)
+        delegate[S].compile[A](body)
 
   protected def binary(recurse: Node[Expr, Type] => Expr[String])(using
       Quotes
@@ -38,16 +44,11 @@ trait VendorTreeCompiler[V]:
 
   def typeString[A](using q: Quotes)(tpe: Type[A]): Expr[String]
 
-  protected def adaptSupport[S[+X] <: Iterable[X], A](
-      tree: Node[Expr, Type]
-  )(using q: Quotes, ts: Type[S], ta: Type[A]): Node[Expr, Type] =
-    tree
-
   class Delegate[S[+X] <: Iterable[X]](using
       override val q: Quotes,
       tv: Type[V],
       ts: Type[S]
-  ) extends TypeCheckingFramework(using q):
+  ) extends CompilationFramework(using q):
     import CompileOps.*
     import q.reflect.{
       Tree => _,
@@ -94,7 +95,6 @@ trait VendorTreeCompiler[V]:
           preprocess[A] andThen
           toNative(Context()) andThen
           typeCheck andThen
-          adaptSupport[S, A] andThen
           toDBIO[A]
       pipe(expr)
 
@@ -354,7 +354,7 @@ abstract class CompileModule[V, S[+X] <: Iterable[X]](using
     override val q: Quotes,
     val tv: Type[V],
     val ts: Type[S]
-) extends TypeCheckingFramework(using q):
+) extends CompilationFramework(using q):
 
   import q.reflect.*
 

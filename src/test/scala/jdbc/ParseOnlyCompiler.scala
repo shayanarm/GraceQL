@@ -15,9 +15,17 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
   def typeString[A](using q: Quotes)(tpe: Type[A]): Expr[String] =
     Expr(q.reflect.TypeRepr.of(using tpe).show(using q.reflect.Printer.TypeReprShortCode))
 
-  override protected def adaptSupport[S[+X] <: Iterable[X], A](
-      tree: Node[Expr, Type]
-  )(using q: Quotes, ts: Type[S], ta: Type[A]): Node[Expr, Type] =
-    tree.transform.pre { case TypeAnn(tree, _) =>
-      tree
+  override def delegate[S[+X] <: Iterable[X]](using
+      Quotes,
+      Type[GenSQL],
+      Type[S]
+  ): Delegate[S] = 
+    new Delegate[S] {
+      import q.reflect.*
+
+      override def typeCheck(raw: Node[Expr, Type]): Node[Expr, Type] =
+        val tree = super.typeCheck(raw)
+        tree.transform.pre { case TypeAnn(tree, _) =>
+          tree
+        }
     }
