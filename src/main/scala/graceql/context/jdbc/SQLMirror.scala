@@ -39,8 +39,11 @@ object SQLEncoding:
   given SQLBase[Long] with {}    
   given SQLBase[Float] with {}    
   given SQLBase[Double] with {}
+  given SQLBase[BigDecimal] with {}
+  given SQLBase[BigInt] with {}
   given SQLBase[Unit] with {}    
-  given SQLBase[java.sql.Date] with {}    
+  given SQLBase[java.sql.Date] with {}
+      
   given option[A, E <: Encodings](using ta: SQLEncoding[A, E]): SQLEncoding[Option[A], E](ta.encoding) with {}
   given tuples[T <: Tuple]: SQLEncoding[T, Row.type](Row) with {}
 
