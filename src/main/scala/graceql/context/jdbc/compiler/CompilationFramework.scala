@@ -180,7 +180,7 @@ trait CompilationFramework(using val q: Quotes) {
                           )
                     case None =>
                       Some(
-                        s"Referenced foreign key column `$field` on record ${Type.show[a]} does not exist"
+                        s"Referenced foreign key field `$field` on record ${Type.show[a]} does not exist"
                       )
             ).flatten
           }
@@ -362,10 +362,12 @@ trait CompilationFramework(using val q: Quotes) {
         case Left(err) => throw GraceException(err)
 
     def tableName[T](using Type[T]): String = tableSchema[T].name
+
     def tableSchema[T](using Type[T]): schema =
       self.tableSchema[T] match
         case Right(n)  => n
         case Left(err) => throw GraceException(err)
+
     def fieldSpecs[T](using Type[T]): List[FieldSpec[_]] =
       FieldSpec.allOf[T] match
         case Right(specs) => specs
@@ -379,6 +381,7 @@ trait CompilationFramework(using val q: Quotes) {
                 ""
               )
           )
+
     def fieldSpec[T](name: String)(using Type[T]): FieldSpec[_] =
       FieldSpec.forField[T](name) match
         case Right(fs) => fs
