@@ -81,7 +81,7 @@ object name:
         case _ => None
 
 @field
-case class schema(val name: String, val compositeUniques: String*)
+case class schema(val name: String, val compositeUniqueKey: String*)
     extends scala.annotation.StaticAnnotation
 object schema:
   given FromExpr[schema] with

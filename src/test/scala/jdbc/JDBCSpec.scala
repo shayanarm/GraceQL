@@ -37,21 +37,23 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
 
   implicit var connection: java.sql.Connection = null
 
-  val record1s: Table[V, Record1] = Table[V, Record1]()
-  val record2s: Table[V, Record2] = Table[V, Record2]()
-  val record3s: Table[V, Record3] = Table[V, Record3]()
-  val record4s: Table[V, Record4] = Table[V, Record4]()
-  val record5s: Table[V, Record5] = Table[V, Record5]()
-  val record6s: Table[V, Record6] = Table[V, Record6]()
-  val record7s: Table[V, Record7] = Table[V, Record7]()
-  val record8s: Table[V, Record8] = Table[V, Record8]()
-  val record9s: Table[V, Record9] = Table[V, Record9]()  
-  val record10s: Table[V, Record10] = Table[V, Record10]()  
-  val record11s: Table[V, Record11] = Table[V, Record11]()  
-  val record12s: Table[V, Record12] = Table[V, Record12]()  
-  val record13s: Table[V, Record13] = Table[V, Record13]()  
-  val record14s: Table[V, Record14] = Table[V, Record14]()  
-  val record15s: Table[V, Record15] = Table[V, Record15]()  
+  val record1s: Table[V, Record1] = Table()
+  val record2s: Table[V, Record2] = Table()
+  val record3s: Table[V, Record3] = Table()
+  val record4s: Table[V, Record4] = Table()
+  val record5s: Table[V, Record5] = Table()
+  val record6s: Table[V, Record6] = Table()
+  val record7s: Table[V, Record7] = Table()
+  val record8s: Table[V, Record8] = Table()
+  val record9s: Table[V, Record9] = Table()  
+  val record10s: Table[V, Record10] = Table()  
+  val record11s: Table[V, Record11] = Table()  
+  val record12s: Table[V, Record12] = Table()  
+  val record13s: Table[V, Record13] = Table()  
+  val record14s: Table[V, Record14] = Table()  
+  val record15s: Table[V, Record15] = Table()  
+  val record16s: Table[V, Record16] = Table()  
+  val record17s: Table[V, Record17] = Table()  
 
   before {
     connection = newConnection()     
@@ -79,7 +81,9 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         vsql.tried {record12s.delete()}.toOption,
         vsql.tried {record13s.delete()}.toOption,
         vsql.tried {record14s.delete()}.toOption,
-        vsql.tried {record15s.delete()}.toOption
+        vsql.tried {record15s.delete()}.toOption,
+        vsql.tried {record16s.delete()}.toOption,
+        vsql.tried {record17s.delete()}.toOption,
       ).flatten.flatMap(_.as[Option].toList)
 
     clean()
@@ -171,6 +175,20 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         record15s.create()
       }.isFailure shouldBe true
     }        
+
+    it should "create a table with a composite unique key" in {
+      vsql {
+        record16s.create()
+        record16s.delete()
+      }.asTry.isSuccess shouldBe true
+    }
+
+    it should "not allow creation of a table with an invalid field inside its composite unique key" in {
+      vsql.tried {
+        record17s.create()
+        record17s.delete()
+      }.isFailure shouldBe true
+    }        
 }
 
 object JDBCSpec:
@@ -253,3 +271,13 @@ object JDBCSpec:
   case class Record15(
       @name("duplicate") field1: Int, @name("duplicate") field2: Int
   ) derives SQLRow
+
+  @schema(name="record16s", compositeUniqueKey= "field1", "field2", "field3")
+  case class Record16(
+      field1: Int, field2: Int, field3: Int
+  ) derives SQLRow  
+
+  @schema(name="record17s", compositeUniqueKey= "field1", "invalid", "field3")
+  case class Record17(
+      field1: Int, field2: Int, field3: Int
+  ) derives SQLRow  

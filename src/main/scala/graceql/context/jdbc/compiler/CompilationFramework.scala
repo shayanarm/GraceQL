@@ -38,11 +38,11 @@ trait CompilationFramework(using val q: Quotes) {
 
   case class ValidatedSchema[A](
       name: String,
-      compositeUniques: List[String],
+      compositeUniqueKey: List[String],
       fieldSpecs: List[FieldSpec[_]]
   ):
     def forAST: List[CreateSpec[Expr, Type]] =
-      val renamedUniques = compositeUniques
+      val renamedUniques = compositeUniqueKey
         .flatMap { n =>
           fieldSpecs.collect {
             case fs if fs.name == n => fs.sqlName
@@ -72,10 +72,14 @@ trait CompilationFramework(using val q: Quotes) {
           List("Schema name cannot be blank")
         )
         fieldSpecs <- FieldSpec.allOf[A]
-        _ <- uniques.toList.collect {
-          case n if !fieldSpecs.exists(fs => fs.name == n) =>
-            s"Field `$n` define in the composite unique constraint does not exist"
-        }.asErrors
+        compUnique <- uniques.toList.distinct match
+          case Nil => Right(Nil)
+          case us =>
+            us.collect {
+              case n if !fieldSpecs.exists(fs => fs.name == n) =>
+                s"Field `$n` defined in the composite unique constraint does not exist"
+            }.asErrors
+              .map(_ => us)
         _ <- fieldSpecs match
           case Nil =>
             Left(
@@ -84,7 +88,7 @@ trait CompilationFramework(using val q: Quotes) {
               )
             )
           case _ => Right(())
-      yield ValidatedSchema[A](tname, uniques.toList, fieldSpecs)
+      yield ValidatedSchema[A](tname, compUnique, fieldSpecs)
 
   case class FieldSpec[A](
       name: String,

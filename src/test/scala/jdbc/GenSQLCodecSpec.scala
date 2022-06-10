@@ -21,7 +21,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   @schema("users")
   case class User(id: Int, name: String) derives SQLRow
 
-  @schema(name="posts", compositeUniques="userId", "content")
+  @schema(name="posts", compositeUniqueKey="userId", "content")
   case class Post(
     @pk @autoinc id: Int, 
     @name("user_id") @fk(classOf[User], "id", OnDelete.Cascade) userId: Int,   
