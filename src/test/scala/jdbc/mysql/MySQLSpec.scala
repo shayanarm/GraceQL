@@ -22,7 +22,7 @@ class MySQLSpec
             record8s.create()
             record8s.delete()
             record2s.delete()                              
-          }.run
+          }.asTry.isSuccess shouldBe true
       }        
 
       it should "not allow `String` columns to have `FOREIGN KEY` constraints on them" in {

@@ -49,6 +49,9 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
   val record10s: Table[V, Record10] = Table[V, Record10]()  
   val record11s: Table[V, Record11] = Table[V, Record11]()  
   val record12s: Table[V, Record12] = Table[V, Record12]()  
+  val record13s: Table[V, Record13] = Table[V, Record13]()  
+  val record14s: Table[V, Record14] = Table[V, Record14]()  
+  val record15s: Table[V, Record15] = Table[V, Record15]()  
 
   before {
     connection = newConnection()     
@@ -73,7 +76,10 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         vsql.tried {record9s.delete()}.toOption,
         vsql.tried {record10s.delete()}.toOption,
         vsql.tried {record11s.delete()}.toOption,
-        vsql.tried {record12s.delete()}.toOption
+        vsql.tried {record12s.delete()}.toOption,
+        vsql.tried {record13s.delete()}.toOption,
+        vsql.tried {record14s.delete()}.toOption,
+        vsql.tried {record15s.delete()}.toOption
       ).flatten.flatMap(_.as[Option].toList)
 
     clean()
@@ -87,29 +93,24 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     s"""
     The high-level JDBC context for $vendor on DDL commands
     """ should "create and drop a simple table (without annotations)" in withCleanup {
-      noException should be thrownBy {
         vsql {
           record1s.create()
-        }.run
+        }.asTry.isSuccess shouldBe true
         vsql {
           record1s.delete()
-        }.run
-      }
+        }.asTry.isSuccess shouldBe true
     }
 
     it should "allow for multi-statement DDL queries" in {
-      noException should be thrownBy {
         vsql {
           record1s.create()
           record1s.delete()
           record1s.create()
           record1s.delete()
-        }.run
-      }
+        }.asTry.isSuccess shouldBe true
     }
 
     it should "create and drop annotated tables" in {
-      noException should be thrownBy {
         vsql {
           record2s.create()
           record3s.create()
@@ -117,8 +118,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
           record4s.delete()
           record3s.delete()
           record2s.delete()
-        }.run
-      }
+        }.asTry.isSuccess shouldBe true
     }
 
     it should "not allow OnDelete.SetNull for non-optional columns" in {
@@ -156,6 +156,21 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         record12s.create()
       }.isFailure shouldBe true
     }    
+
+    it should "properly handle foreign keys with custom column names during table creation" in {
+      vsql {
+        record13s.create()
+        record14s.create()
+        record14s.delete()
+        record13s.delete()
+      }.asTry.isSuccess shouldBe true
+    }
+
+    it should "not allow creation of tables with duplicate column names" in {
+      vsql.tried {
+        record15s.create()
+      }.isFailure shouldBe true
+    }        
 }
 
 object JDBCSpec:
@@ -223,3 +238,18 @@ object JDBCSpec:
   case class Record12(
       @name(" ") field1: String
   ) derives SQLRow    
+
+  @schema("record13s")
+  case class Record13(
+      @pk @name("custom") field1: Int
+  ) derives SQLRow      
+
+  @schema("record14s")
+  case class Record14(
+      @fk(classOf[Record13], "field1") field1: Int
+  ) derives SQLRow
+
+  @schema("record15s")
+  case class Record15(
+      @name("duplicate") field1: Int, @name("duplicate") field2: Int
+  ) derives SQLRow

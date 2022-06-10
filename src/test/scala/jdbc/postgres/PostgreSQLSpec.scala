@@ -23,7 +23,7 @@ class PostgreSQLSpec
             record9s.delete()         
             record8s.delete()
             record2s.delete()                              
-          }.run
+          }.asTry.isSuccess shouldBe true
       }       
     }  
 }
