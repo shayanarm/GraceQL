@@ -6,24 +6,21 @@ import jdbc.JDBCSpec
 class PostgreSQLSpec
     extends JDBCSpec[PostgreSQL, Seq](
       "PostgreSQL",
-      "jdbc:postgresql://postgres:5432/testdb",
+      "jdbc:postgresql://postgres:5432/",
+      "testdb",
+      Map.empty,
       Some("postgres"),
       "root",
       org.postgresql.Driver()
     ) {
 
-    commonDDLTests()
+  commonDDLTests()
 
-    withCleanup {
-      it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same column" in {
-          vsql {
-            record2s.create()
-            record8s.create()
-            record9s.create()           
-            record9s.delete()         
-            record8s.delete()
-            record2s.delete()                              
-          }.asTry.isSuccess shouldBe true
-      }       
-    }  
+  it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same column" in withCleanup {
+    vsql {
+      record2s.create()
+      record8s.create()
+      record9s.create()
+    }.asTry.isSuccess shouldBe true
+  }
 }

@@ -16,11 +16,14 @@ import scala.concurrent.Promise
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
+import scala.jdk.CollectionConverters.*
 import scala.util.Success
 
 trait JDBCSpec[V, S[+X] <: Iterable[X]](
     val vendor: String,
     val url: String,
+    val database: String,
+    val arguments: Map[String, String],
     val user: Option[String],
     val password: String,
     val driver: Driver
@@ -28,14 +31,14 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     with should.Matchers
     with BeforeAndAfter {
   import JDBCSpec.*
+  
+  DriverManager.registerDriver(driver)    
+  val dbUrl = {
+    val argString = arguments.map((k,v) => s"$k=$v").mkString("&")
+    s"$url$database?$argString"
+  }
 
   inline def vsql = sql[V, S]
-
-  def newConnection(): java.sql.Connection = 
-      DriverManager.registerDriver(driver)
-      DriverManager.getConnection(url, user.orNull, password)
-
-  implicit var connection: java.sql.Connection = null
 
   val record1s: Table[V, Record1] = Table()
   val record2s: Table[V, Record2] = Table()
@@ -53,44 +56,23 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
   val record14s: Table[V, Record14] = Table()  
   val record15s: Table[V, Record15] = Table()  
   val record16s: Table[V, Record16] = Table()  
-  val record17s: Table[V, Record17] = Table()  
+  val record17s: Table[V, Record17] = Table()
 
-  before {
-    connection = newConnection()     
-  }
+  def withCleanup[A](block: Connection ?=> A): A =
+        
+    def clean() =
+      val connection = DriverManager.getConnection(url, user.orNull, password)    
+      Try {connection.prepareStatement(s"DROP DATABASE $database").execute()}
+      Try {connection.prepareStatement(s"CREATE DATABASE $database").execute()}
+      connection.close()
+      
+    val dbConn = DriverManager.getConnection(dbUrl, user.orNull, password)
 
-  after {
-    connection.close()
-  }
-
-  inline def withCleanup[A](block: => A)(using ctx: JDBCQueryContext[V, S]): A =
-    def clean() = 
-      // delete tables if any exists
-      List(
-        vsql.tried {record1s.delete()}.toOption,
-        vsql.tried {record2s.delete()}.toOption,
-        vsql.tried {record3s.delete()}.toOption,
-        vsql.tried {record4s.delete()}.toOption,
-        vsql.tried {record5s.delete()}.toOption,
-        vsql.tried {record6s.delete()}.toOption,
-        vsql.tried {record7s.delete()}.toOption,
-        vsql.tried {record8s.delete()}.toOption,
-        vsql.tried {record9s.delete()}.toOption,
-        vsql.tried {record10s.delete()}.toOption,
-        vsql.tried {record11s.delete()}.toOption,
-        vsql.tried {record12s.delete()}.toOption,
-        vsql.tried {record13s.delete()}.toOption,
-        vsql.tried {record14s.delete()}.toOption,
-        vsql.tried {record15s.delete()}.toOption,
-        vsql.tried {record16s.delete()}.toOption,
-        vsql.tried {record17s.delete()}.toOption,
-      ).flatten.flatMap(_.as[Option].toList)
-
-    clean()
     try 
-      block
-    finally  
-      clean()  
+      block(using dbConn)
+    finally
+      dbConn.close()
+      clean() 
 
   inline def commonDDLTests()(using ctx: JDBCQueryContext[V, S]) =
 
@@ -105,7 +87,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         }.asTry.isSuccess shouldBe true
     }
 
-    it should "allow for multi-statement DDL queries" in {
+    it should "allow for multi-statement DDL queries" in withCleanup {
         vsql {
           record1s.create()
           record1s.delete()
@@ -114,7 +96,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         }.asTry.isSuccess shouldBe true
     }
 
-    it should "create and drop annotated tables" in {
+    it should "create and drop annotated tables" in withCleanup {
         vsql {
           record2s.create()
           record3s.create()
@@ -125,68 +107,64 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         }.asTry.isSuccess shouldBe true
     }
 
-    it should "not allow OnDelete.SetNull for non-optional columns" in {
+    it should "not allow OnDelete.SetNull for non-optional columns" in withCleanup {
       vsql.tried {
         record5s.create()
       }.isFailure shouldBe true
     }
 
-    it should "not allow invalid reference names for foreign keys " in {
+    it should "not allow invalid reference names for foreign keys " in withCleanup {
       vsql.tried {
         record6s.create()
       }.isFailure shouldBe true
     }
 
-    it should "not allow foreign key constraints with mismatched types" in {
+    it should "not allow foreign key constraints with mismatched types" in withCleanup {
       vsql.tried {
         record7s.create()
       }.isFailure shouldBe true
     }
 
-    it should "not allow creation of tables with blank schema names" in {
+    it should "not allow creation of tables with blank schema names" in withCleanup {
       vsql.tried {
         record10s.create()
       }.isFailure shouldBe true
     }    
 
-    it should "not allow creation of tables with missing schema annotation" in {
+    it should "not allow creation of tables with missing schema annotation" in withCleanup {
       vsql.tried {
         record11s.create()
       }.isFailure shouldBe true
     }
 
-    it should "not allow creation of tables with blank field name(s)" in {
+    it should "not allow creation of tables with blank field name(s)" in withCleanup {
       vsql.tried {
         record12s.create()
       }.isFailure shouldBe true
     }    
 
-    it should "properly handle foreign keys with custom column names during table creation" in {
+    it should "properly handle foreign keys with custom column names during table creation" in withCleanup {
       vsql {
         record13s.create()
         record14s.create()
-        record14s.delete()
-        record13s.delete()
       }.asTry.isSuccess shouldBe true
     }
 
-    it should "not allow creation of tables with duplicate column names" in {
+    it should "not allow creation of tables with duplicate column names" in withCleanup {
       vsql.tried {
         record15s.create()
       }.isFailure shouldBe true
     }        
 
-    it should "create a table with a composite unique key" in {
+    it should "create a table with a composite unique key" in withCleanup {
       vsql {
         record16s.create()
-        record16s.delete()
       }.asTry.isSuccess shouldBe true
     }
 
-    it should "not allow creation of a table with an invalid field inside its composite unique key" in {
+    it should "not allow creation of a table with an invalid field inside its composite unique key" in withCleanup {
       vsql.tried {
         record17s.create()
-        record17s.delete()
       }.isFailure shouldBe true
     }        
 }
