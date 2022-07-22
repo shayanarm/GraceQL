@@ -59,20 +59,15 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
   val record17s: Table[V, Record17] = Table()
 
   def withCleanup[A](block: Connection ?=> A): A =
-        
-    def clean() =
-      val connection = DriverManager.getConnection(url, user.orNull, password)    
-      Try {connection.prepareStatement(s"DROP DATABASE $database").execute()}
-      Try {connection.prepareStatement(s"CREATE DATABASE $database").execute()}
-      connection.close()
-      
     val dbConn = DriverManager.getConnection(dbUrl, user.orNull, password)
-
     try 
       block(using dbConn)
     finally
       dbConn.close()
-      clean() 
+      val globalConn = DriverManager.getConnection(url, user.orNull, password)    
+      Try {globalConn.prepareStatement(s"DROP DATABASE $database").execute()}
+      Try {globalConn.prepareStatement(s"CREATE DATABASE $database").execute()}
+      globalConn.close()
 
   inline def commonDDLTests()(using ctx: JDBCQueryContext[V, S]) =
 
@@ -169,8 +164,11 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     }        
 }
 
+/**
+ * To prevent some bizarre compiler error, classes are defined outside the test suite.
+*/
 object JDBCSpec:
-  // To prevent some bizarre compiler error, classes are defined outside the test suite.
+
   @schema("record1s")
   case class Record1(field1: Int, field2: String) derives SQLRow
 
