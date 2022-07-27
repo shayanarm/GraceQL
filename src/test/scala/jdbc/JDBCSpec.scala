@@ -58,7 +58,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
   val record16s: Table[V, Record16] = Table()  
   val record17s: Table[V, Record17] = Table()
 
-  def withCleanup[A](block: Connection ?=> A): A =
+  def withConnection[A](block: Connection ?=> A): A =
     val dbConn = DriverManager.getConnection(dbUrl, user.orNull, password)
     try 
       block(using dbConn)
@@ -73,7 +73,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
 
     s"""
     The high-level JDBC context for $vendor on DDL commands
-    """ should "create and drop a simple table (without annotations)" in withCleanup {
+    """ should "create and drop a simple table (without annotations)" in withConnection {
         vsql {
           record1s.create()
         }.asTry.isSuccess shouldBe true
@@ -82,7 +82,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         }.asTry.isSuccess shouldBe true
     }
 
-    it should "allow for multi-statement DDL queries" in withCleanup {
+    it should "allow for multi-statement DDL queries" in withConnection {
         vsql {
           record1s.create()
           record1s.delete()
@@ -91,7 +91,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         }.asTry.isSuccess shouldBe true
     }
 
-    it should "create and drop annotated tables" in withCleanup {
+    it should "create and drop annotated tables" in withConnection {
         vsql {
           record2s.create()
           record3s.create()
@@ -102,62 +102,62 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
         }.asTry.isSuccess shouldBe true
     }
 
-    it should "not allow OnDelete.SetNull for non-optional columns" in withCleanup {
+    it should "not allow OnDelete.SetNull for non-optional columns" in withConnection {
       vsql.tried {
         record5s.create()
       }.isFailure shouldBe true
     }
 
-    it should "not allow invalid reference names for foreign keys " in withCleanup {
+    it should "not allow invalid reference names for foreign keys " in withConnection {
       vsql.tried {
         record6s.create()
       }.isFailure shouldBe true
     }
 
-    it should "not allow foreign key constraints with mismatched types" in withCleanup {
+    it should "not allow foreign key constraints with mismatched types" in withConnection {
       vsql.tried {
         record7s.create()
       }.isFailure shouldBe true
     }
 
-    it should "not allow creation of tables with blank schema names" in withCleanup {
+    it should "not allow creation of tables with blank schema names" in withConnection {
       vsql.tried {
         record10s.create()
       }.isFailure shouldBe true
     }    
 
-    it should "not allow creation of tables with missing schema annotation" in withCleanup {
+    it should "not allow creation of tables with missing schema annotation" in withConnection {
       vsql.tried {
         record11s.create()
       }.isFailure shouldBe true
     }
 
-    it should "not allow creation of tables with blank field name(s)" in withCleanup {
+    it should "not allow creation of tables with blank field name(s)" in withConnection {
       vsql.tried {
         record12s.create()
       }.isFailure shouldBe true
     }    
 
-    it should "properly handle foreign keys with custom column names during table creation" in withCleanup {
+    it should "properly handle foreign keys with custom column names during table creation" in withConnection {
       vsql {
         record13s.create()
         record14s.create()
       }.asTry.isSuccess shouldBe true
     }
 
-    it should "not allow creation of tables with duplicate column names" in withCleanup {
+    it should "not allow creation of tables with duplicate column names" in withConnection {
       vsql.tried {
         record15s.create()
       }.isFailure shouldBe true
     }        
 
-    it should "create a table with a composite unique key" in withCleanup {
+    it should "create a table with a composite unique key" in withConnection {
       vsql {
         record16s.create()
       }.asTry.isSuccess shouldBe true
     }
 
-    it should "not allow creation of a table with an invalid field inside its composite unique key" in withCleanup {
+    it should "not allow creation of a table with an invalid field inside its composite unique key" in withConnection {
       vsql.tried {
         record17s.create()
       }.isFailure shouldBe true

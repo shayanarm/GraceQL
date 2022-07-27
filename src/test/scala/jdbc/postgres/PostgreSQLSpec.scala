@@ -16,7 +16,7 @@ class PostgreSQLSpec
 
   commonDDLTests()
 
-  it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same column" in withCleanup {
+  it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same column" in withConnection {
     vsql {
       record2s.create()
       record8s.create()

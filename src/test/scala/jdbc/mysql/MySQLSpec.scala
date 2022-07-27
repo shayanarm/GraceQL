@@ -19,14 +19,14 @@ class MySQLSpec
 
   commonDDLTests()
 
-  it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same (non-string) column" in withCleanup {
+  it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same (non-string) column" in withConnection {
     vsql {
       record2s.create()
       record8s.create()
     }.asTry.isSuccess shouldBe true
   }
 
-  it should "not allow `String` columns to have `FOREIGN KEY` constraints on them" in withCleanup {
+  it should "not allow `String` columns to have `FOREIGN KEY` constraints on them" in withConnection {
     vsql.tried {
       record2s.create()
       record9s.create()
