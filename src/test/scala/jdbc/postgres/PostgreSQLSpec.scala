@@ -14,7 +14,7 @@ class PostgreSQLSpec
       org.postgresql.Driver()
     ) {
 
-  commonDDLTests()
+  expandCommons()
 
   it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same column" in withConnection {
     vsql {

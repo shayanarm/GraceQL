@@ -68,9 +68,8 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       Try {globalConn.prepareStatement(s"DROP DATABASE $database").execute()}
       Try {globalConn.prepareStatement(s"CREATE DATABASE $database").execute()}
       globalConn.close()
-
-  inline def commonDDLTests()(using ctx: JDBCQueryContext[V, S]) =
-
+  
+  inline def expandCommons()(using ctx: JDBCQueryContext[V, S]) =
     s"""
     The high-level JDBC context for $vendor on DDL commands
     """ should "create and drop a simple table (without annotations)" in withConnection {
@@ -161,7 +160,32 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       vsql.tried {
         record17s.create()
       }.isFailure shouldBe true
-    }        
+    }      
+
+    s"""
+    The high-level JDBC context for $vendor on INSERT commands
+    """ should "insert a single referenced record to a table" in withConnection {
+        // val row = Record1(0, "foo")
+        // val result = vsql {
+        //   // record1s.create()
+        //   // record1s.insert(row)
+        //   // record1s.asSource.read
+        //   Seq(row)
+        // }.asTry.map(_.toList) shouldEqual (Success(List(row)))
+    }      
+
+
+    s"""
+    The high-level JDBC context for $vendor on SELECT commands
+    """ should "select any literal" in withConnection {
+        // val referenced = 5
+        // val result = vsql {
+        //   Record1(0, "foo") -> referenced
+        // }.asTry shouldEqual (Success(Record1(0, "foo") -> referenced))
+    }
+
+    // Todo: make compile module override mechanism OO based rather than partial function composition based. 
+    // Todo: enforce all the statements and the expression within a query to have a @terminal method as their last call
 }
 
 /**

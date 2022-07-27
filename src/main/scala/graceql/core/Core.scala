@@ -80,8 +80,8 @@ trait Queryable[R[_], M[_], N[+_]]
     @terminal
     def insert[B](a: A)(returning: A => B): B
     @terminal
-    inline def insert[B](a: A): Unit = insert(a)(a => ())
-    @terminal
+    def insert(a: A): Unit
+
     inline def +=(a: A): Unit = insert(a)
     @terminal
     def update(predicate: A => Boolean)(f: A => A): Int
@@ -89,7 +89,6 @@ trait Queryable[R[_], M[_], N[+_]]
     def dropWhile(predicate: A => Boolean): Int
     @terminal
     def clear(): Int
-    @terminal
     inline def truncate(): Int = clear()
     @terminal
     def create(): Unit

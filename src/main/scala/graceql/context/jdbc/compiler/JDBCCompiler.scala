@@ -133,6 +133,8 @@ trait VendorTreeCompiler[V]:
           '{ DBIO.Statement(${ binary(tree) }) }.asExprOf[DBIO[A]]
         case ('[Unit], _: Block[_, _]) =>
           '{ DBIO.Statement(${ binary(tree) }) }.asExprOf[DBIO[A]]
+        case (_, Literal(v)) =>
+          '{ DBIO.Pure[A](() => ${v.asExprOf[A]}) }          
         case _ =>
           '{ DBIO.Query(${ binary(tree) }, (rs) => ???) }
 

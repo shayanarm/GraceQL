@@ -37,7 +37,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
       inline src: Queryable[[x] =>> Table[GenSQL, x], Iterable, DBIO] ?=> A
   )(expected: String) =
     val exe = query[[x] =>> Table[GenSQL, x], Iterable](src)
-    assert(exe.compiled.underlying == expected)
+    assert(exe.compiled.executableStmt.get == expected)
 
   s"""
   Using raw SQL, the JDBC context
@@ -103,13 +103,14 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  it should "parse a literal integer as valid SQL expression" in {
-    parseAssert {
-      native"${1.lift}".unlift
-    } {
-      "1"
-    }
-  }
+  // Note: Incorrect. single literal values do not generate a SQL statement
+  // it should "parse a literal integer as valid SQL expression" in {
+  //   parseAssert {
+  //     native"${1.lift}".unlift
+  //   } {
+  //     "1"
+  //   }
+  // }
 
   it should "parse a simple typed native query" in {
     parseAssert {

@@ -117,6 +117,7 @@ trait MemoryQueryContextImpl[R[_]]:
         refInsertMany(ref)(a.merge)
       def insert[B](a: A)(returning: A => B): B = 
         insertMany(a.pure)(returning).head
+      inline def insert(a: A): Unit = insert(a)(_ => ())
       def update(predicate: A => Boolean)(f: A => A): Int = 
         refUpdate(ref)(predicate)(f)
       def dropWhile(predicate: A => Boolean): Int =

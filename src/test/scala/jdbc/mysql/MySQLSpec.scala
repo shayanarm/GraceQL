@@ -17,7 +17,7 @@ class MySQLSpec
       com.mysql.jdbc.Driver()
     ) {
 
-  commonDDLTests()
+  expandCommons()
 
   it should "allow `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and `INDEX` constraints on the same (non-string) column" in withConnection {
     vsql {
