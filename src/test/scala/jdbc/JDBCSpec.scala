@@ -167,12 +167,11 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     """ should "insert a single referenced record to a table" in withConnection {
         // val row = Record1(0, "foo")
         // val result = vsql {
-        //   // record1s.create()
-        //   // record1s.insert(row)
-        //   // record1s.asSource.read
-        //   Seq(row)
+        //   record1s.create()
+        //   record1s.insert(row)
+        //   record1s.asSource.read
         // }.asTry.map(_.toList) shouldEqual (Success(List(row)))
-    }      
+    }
 
 
     s"""
@@ -185,7 +184,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
     }
 
     // Todo: make compile module override mechanism OO based rather than partial function composition based. 
-    // Todo: enforce all the statements and the expression within a query to have a @terminal method as their last call
+    // Todo: enforce all the statements and the expressions within a query to have a @terminal method as their last call
 }
 
 /**
