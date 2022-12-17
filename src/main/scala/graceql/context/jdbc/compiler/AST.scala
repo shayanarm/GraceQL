@@ -582,7 +582,7 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
     if required then `with` else `with` | without
   def dual: Parser[N] = embedded.dual | kw.dual ^^ { _ => Dual() }
   def ident: Parser[String] = """[a-zA-Z][a-zA-Z0-9_]*""".r ^? ({
-    case p if !kw.registry.values.exists(r => r.matches(p)) => p
+    case p if !kw.values.exists(r => r.matches(p)) => p
   }, t => s"Keyword \"${t}\" cannot be used as identifier")
   def ref: Parser[N] =
     embedded.ref | ident ^^ { r => Ref(r) }
@@ -842,127 +842,66 @@ class SQLParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       case Failure(msg, i)  => scala.util.Failure(GraceException(msg))
 
 object SQLParser:
-  object kw:
-    lazy val registry: Map[String, Regex] = Map(
-      "drop" -> """(?i)drop""".r,
-      "delete" -> """(?i)delete""".r,
-      "create" -> """(?i)create""".r,
-      "table" -> """(?i)table""".r,
-      "key" -> """(?i)key""".r,
-      "primary" -> """(?i)primary""".r,
-      "foreign" -> """(?i)foreign""".r,
-      "references" -> """(?i)references""".r,
-      "index" -> """(?i)index""".r,
-      "unique" -> """(?i)unique""".r,
-      "auto_increment" -> """(?i)auto_increment""".r,
-      "default" -> """(?i)default""".r,
-      "cascade" -> """(?i)cascade""".r,
-      "restrict" -> """(?i)restrict""".r,
-      "set" -> """(?i)set""".r,
-      "select" -> """(?i)select""".r,
-      "distinct" -> """(?i)distinct""".r,
-      "from" -> """(?i)from""".r,
-      "as" -> """(?i)as""".r,
-      "dual" -> """(?i)dual""".r,
-      "star" -> """\*""".r,
-      "not" -> """(?i)not""".r,
-      "all" -> """(?i)all""".r,
-      "any" -> """(?i)any""".r,
-      "some" -> """(?i)some""".r,
-      "is" -> """(?i)is""".r,
-      "null" -> """(?i)null""".r,
-      "exists" -> """(?i)exists""".r,
-      "and" -> """(?i)and""".r,
-      "or" -> """(?i)or""".r,
-      "in" -> """(?i)in""".r,
-      "like" -> """(?i)like""".r,
-      "between" -> """(?i)between""".r,
-      "where" -> """(?i)where""".r,
-      "by" -> """(?i)by""".r,
-      "group" -> """(?i)group""".r,
-      "order" -> """(?i)order""".r,
-      "offset" -> """(?i)offset""".r,
-      "limit" -> """(?i)limit""".r,
-      "join" -> """(?i)join""".r,
-      "inner" -> """(?i)inner""".r,
-      "left" -> """(?i)left""".r,
-      "right" -> """(?i)right""".r,
-      "full" -> """(?i)full""".r,
-      "cross" -> """(?i)cross""".r,
-      "on" -> """(?i)on""".r,
-      "having" -> """(?i)having""".r,
-      "asc" -> """(?i)asc""".r,
-      "desc" -> """(?i)desc""".r,
-      "," -> """\,""".r,
-      "." -> """\.""".r,
-      ";" -> """\;""".r,
-      "count" -> """(?i)count""".r,
-      "sum" -> """(?i)sum""".r,
-      "min" -> """(?i)min""".r,
-      "max" -> """(?i)max""".r,
-      "avg" -> """(?i)avg""".r,
-      "first" -> """(?i)first""".r,
-      "cast" -> """(?i)cast""".r,
-      //unused, but reserved
-      "true" -> """(?i)true""".r,
-      "false" -> """(?i)false""".r,      
-    )
-    def drop = registry("drop")
-    def delete = registry("delete")
-    def create = registry("create")
-    def table = registry("table")
-    def key = registry("key")
-    def primary = registry("primary")
-    def foreign = registry("foreign")
-    def references = registry("references")
-    def index = registry("index")
-    def unique = registry("unique")
-    def auto_increment = registry("auto_increment")
-    def default = registry("default")
-    def cascade = registry("cascade")
-    def restrict = registry("restrict")
-    def set = registry("set")        
-    def select = registry("select")
-    def distinct = registry("distinct")
-    def from = registry("from")
-    def as = registry("as")
-    def dual = registry("dual")
-    def star = registry("star")
-    def not = registry("not")
-    def all = registry("all")
-    def any = registry("any")
-    def some = registry("some")
-    def is = registry("is")
-    def `null` = registry("null")
-    def exists = registry("exists")
-    def and = registry("and")
-    def or = registry("or")
-    def in = registry("in")
-    def like = registry("like")
-    def between = registry("between")
-    def where = registry("where")
-    def by = registry("by")
-    def group = registry("group")
-    def order = registry("order")
-    def offset = registry("offset")
-    def limit = registry("limit")
-    def join = registry("join")
-    def inner = registry("inner")
-    def left = registry("left")
-    def right = registry("right")
-    def full = registry("full")
-    def cross = registry("cross")
-    def on = registry("on")
-    def having = registry("having")
-    def asc = registry("asc")
-    def desc = registry("desc")
-    def `,` = registry(",")
-    def `.` = registry(".")
-    def `;` = registry(";")        
-    def count = registry("count")        
-    def sum = registry("sum")        
-    def min = registry("min")        
-    def max = registry("max")        
-    def avg = registry("avg")
-    def first = registry("first")
-    def cast = registry("cast")
+  enum kw(regex: String) extends Regex(regex):
+    case drop extends kw("""(?i)drop""")
+    case delete extends kw("""(?i)delete""")
+    case create extends kw("""(?i)create""")
+    case table extends kw("""(?i)table""")
+    case key extends kw("""(?i)key""")
+    case primary extends kw("""(?i)primary""")
+    case foreign extends kw("""(?i)foreign""")
+    case references extends kw("""(?i)references""")
+    case index extends kw("""(?i)index""")
+    case unique extends kw("""(?i)unique""")
+    case auto_increment extends kw("""(?i)auto_increment""")
+    case default extends kw("""(?i)default""")
+    case cascade extends kw("""(?i)cascade""")
+    case restrict extends kw("""(?i)restrict""")
+    case set extends kw("""(?i)set""")
+    case select extends kw("""(?i)select""")
+    case distinct extends kw("""(?i)distinct""")
+    case from extends kw("""(?i)from""")
+    case as extends kw("""(?i)as""")
+    case dual extends kw("""(?i)dual""")
+    case star extends kw("""\*""")
+    case not extends kw("""(?i)not""")
+    case all extends kw("""(?i)all""")
+    case any extends kw("""(?i)any""")
+    case some extends kw("""(?i)some""")
+    case is extends kw("""(?i)is""")
+    case `null` extends kw("""(?i)null""")
+    case exists extends kw("""(?i)exists""")
+    case and extends kw("""(?i)and""")
+    case or extends kw("""(?i)or""")
+    case in extends kw("""(?i)in""")
+    case like extends kw("""(?i)like""")
+    case between extends kw("""(?i)between""")
+    case where extends kw("""(?i)where""")
+    case by extends kw("""(?i)by""")
+    case group extends kw("""(?i)group""")
+    case order extends kw("""(?i)order""")
+    case offset extends kw("""(?i)offset""")
+    case limit extends kw("""(?i)limit""")
+    case join extends kw("""(?i)join""")
+    case inner extends kw("""(?i)inner""")
+    case left extends kw("""(?i)left""")
+    case right extends kw("""(?i)right""")
+    case full extends kw("""(?i)full""")
+    case cross extends kw("""(?i)cross""")
+    case on extends kw("""(?i)on""")
+    case having extends kw("""(?i)having""")
+    case asc extends kw("""(?i)asc""")
+    case desc extends kw("""(?i)desc""")
+    case `,` extends kw("""\,""")
+    case `.` extends kw("""\.""")
+    case `;` extends kw("""\;""")
+    case count extends kw("""(?i)count""")
+    case sum extends kw("""(?i)sum""")
+    case min extends kw("""(?i)min""")
+    case max extends kw("""(?i)max""")
+    case avg extends kw("""(?i)avg""")
+    case first extends kw("""(?i)first""")
+    case cast extends kw("""(?i)cast""")
+    //unused, but reserved
+    case `true` extends kw("""(?i)true""")
+    case `false` extends kw("""(?i)false""")
