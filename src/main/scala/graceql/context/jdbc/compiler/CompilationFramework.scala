@@ -57,7 +57,7 @@ trait CompilationFramework(using val q: Quotes) {
 
   object Schema:
     def forType[A](using Type[A]): Validated[String, Schema[A]] =
-      val enc = 
+      val v1 = 
         for
           enc <- sqlEncoding[A]
           trep: TypeRepr <- enc match
@@ -66,7 +66,7 @@ trait CompilationFramework(using val q: Quotes) {
               s"Target type must derive ${TypeRepr.of[SQLRow].typeSymbol.name} to be qualified as a table.".err
         yield enc
 
-      val sch = 
+      val v2 = 
         for
           sch <- tableSchema[A]
           schema(tname, uniques*) = sch
@@ -90,7 +90,7 @@ trait CompilationFramework(using val q: Quotes) {
             case _ => pass
         yield Schema[A](tname, compUnique, fieldSpecs)
 
-      enc ~ sch ^^ { case _ ~ s => s }
+      v1 ~ v2 ^^ { case (_ , s) => s }
 
   case class FieldSpec[A](
       name: String,
@@ -125,7 +125,7 @@ trait CompilationFramework(using val q: Quotes) {
               .map(Select(Ref(trep.typeSymbol.companionModule), _))
               .map(_.asExprOf[t])
 
-            val enc = 
+            val v1 = 
               for
                 enc <- sqlEncoding[t]
                 _ <- enc match
@@ -134,14 +134,14 @@ trait CompilationFramework(using val q: Quotes) {
                   case _ => pass
               yield enc
 
-            val mtpe = 
+            val v2 = 
               for
                 m <- sqlMirror[t]
                 mtpe = m.asTerm.tpe.asType match
                   case '[SQLMirror[t, x]] => Type.of[x]
               yield mtpe    
             
-            val mods = List(
+            val v3 = List(
               annotationFor[name](s),
               annotationFor[pk](s),
               annotationFor[fk](s),
@@ -150,8 +150,8 @@ trait CompilationFramework(using val q: Quotes) {
               annotationFor[index](s)
             ).sequence map (_.flatten)
 
-            enc ~ mtpe ~ mods ^^ {
-              case _ ~ mt ~ mo => FieldSpec[t](s.name, Type.of[t], mt, mo.toList, default)
+            v1 ~ v2 ~ v3 ^^ {
+              case _ ~ mtpe ~ mods => FieldSpec[t](s.name, Type.of[t], mtpe, mods.toList, default)
             }
         _ <- {
           val nameCheck = if fs.sqlName.isBlank 

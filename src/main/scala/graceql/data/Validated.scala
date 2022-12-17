@@ -3,8 +3,6 @@ package graceql.data
 import scala.collection.WithFilter
 import java.util.NoSuchElementException
 
-case class ~[+A, +B](l: A, r: B)
-
 enum Validated[E, +A]:
     case Valid[E, A](value: A) extends Validated[E, A]
     case Invalid[E, A] (head: E, tail: Seq[E] = Seq.empty) extends Validated[E, A]
@@ -27,8 +25,8 @@ enum Validated[E, +A]:
         case Valid(v) => Seq.empty
         case Invalid(h, es) => h +: es
 
-    def zip[B](other: Validated[E, B]): Validated[E, A ~ B] =
-        this.ap(other.map(b => a => graceql.data.~(a, b)))    
+    inline def zip[B](other: Validated[E, B]): Validated[E, A ~ B] =
+        this.ap(other.map(b => a => (a, b)))    
 
     inline def ~[B](other: Validated[E, B]): Validated[E, A ~ B] = zip(other)
 
@@ -48,7 +46,7 @@ enum Validated[E, +A]:
         filter(_ => err)(pred)
     
     inline def filter(pred: A => Boolean)(using conv: Validated.FromString[E]): Validated[E, A] =
-        filter(a => conv(s"Predicate for `Validated.filter` failed for element ${a}"))(pred)
+        filter(a => conv(s"Predicate for `Validated.filter` failed for value `${a}`"))(pred)
 
     inline def withFilter(pred: A => Boolean)(using conv: Validated.FromString[E]): Validated[E, A] =
         filter(pred)        
@@ -84,17 +82,25 @@ object Validated:
 
       extension [A](a: A) override def pure: Validated[E, A] = Valid(a)
 
-      extension [A](ma: Validated[E, A]) override def ap[B](mf: Validated[E, A => B]): Validated[E, B] =
-        (ma, mf) match 
-            case (Invalid(hl, tl), Invalid(hr, tr)) => Invalid(hl, (tl :+ hr) ++ tr)  
-            case (Valid(_), inv@ Invalid(_, _)) => inv.asInstanceOf[Validated[E, B]]  
-            case (inv@ Invalid(_, _), Valid(_)) => inv.asInstanceOf[Validated[E, B]]
-            case (Valid(v), Valid(f)) => Valid(f(v))
+      extension [A](ma: Validated[E, A])
 
-      extension [A](ma: Validated[E, A]) override def flatMap[B](f: A => Validated[E, B]): Validated[E, B] = 
-        ma match
-            case Valid(a) => f(a)
-            case other => other.asInstanceOf[Validated[E, B]]
+        override def map[B](f: A => B): Validated[E, B] = 
+            ma match
+                case Valid(a) => Valid(f(a))
+                case other => other.asInstanceOf[Validated[E, B]]
+
+        override def ap[B](mf: Validated[E, A => B]): Validated[E, B] =
+            (ma, mf) match 
+                case (Invalid(hl, tl), Invalid(hr, tr)) => Invalid(hl, (tl :+ hr) ++ tr)  
+                case (Valid(_), inv@ Invalid(_, _)) => inv.asInstanceOf[Validated[E, B]]  
+                case (inv@ Invalid(_, _), Valid(_)) => inv.asInstanceOf[Validated[E, B]]
+                case (Valid(v), Valid(f)) => Valid(f(v))
+
+      extension [A](ma: Validated[E, A]) 
+        override def flatMap[B](f: A => Validated[E, B]): Validated[E, B] = 
+            ma match
+                case Valid(a) => f(a)
+                case other => other.asInstanceOf[Validated[E, B]]
     }
 
     extension [E, A](es: Seq[Validated[E, A]])
