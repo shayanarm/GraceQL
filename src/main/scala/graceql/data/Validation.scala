@@ -46,11 +46,12 @@ object Validation:
         def apply(msg: String): E
 
     object FromString:
-        given FromString[String] = a => a    
+        given FromString[String] = a => a
+        given convertible[A](using c: Conversion[String, A]): FromString[A] = a => c(a)
 
     extension [E](e: E)
         def err[A]: Validation[E, A] = Invalid(Seq(e))
-        
+
     given monadInstances[E]: Monad[[x] =>> Validation[E, x]] with  {
 
       extension [A](a: A) override def pure: Validation[E, A] = Valid(a)
