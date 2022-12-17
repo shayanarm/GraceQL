@@ -92,8 +92,8 @@ object Validated:
         override def ap[B](mf: Validated[E, A => B]): Validated[E, B] =
             (ma, mf) match 
                 case (Invalid(hl, tl), Invalid(hr, tr)) => Invalid(hl, (tl :+ hr) ++ tr)  
-                case (Valid(_), inv@ Invalid(_, _)) => inv.asInstanceOf[Validated[E, B]]  
-                case (inv@ Invalid(_, _), Valid(_)) => inv.asInstanceOf[Validated[E, B]]
+                case (Valid(_), inv: Invalid[_, _]) => inv.asInstanceOf[Validated[E, B]]  
+                case (inv: Invalid[_, _], Valid(_)) => inv.asInstanceOf[Validated[E, B]]
                 case (Valid(v), Valid(f)) => Valid(f(v))
 
       extension [A](ma: Validated[E, A]) 
