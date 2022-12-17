@@ -6,23 +6,26 @@ import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
 import graceql.quoted.CompileOps
 import graceql.syntax.*
+import graceql.data.{Validated, ~}
 
 trait CompilationFramework(using val q: Quotes) {
   self =>
   import q.reflect.*
+  import Validated.*
 
-  extension (eith: Either.type)
-    def sequence[L, R](es: List[Either[L, R]]): Either[List[L], List[R]] =
-      es.foldLeft[Either[List[L], List[R]]](Right(Nil)) {
-        case (Right(ms), Right(m)) => Right(m :: ms)
-        case (Left(es), Left(e))   => Left(e :: es)
-        case (l @ Left(es), _)     => l
-        case (_, Left(e))          => Left(List(e))
-      }.map(_.reverse)
-
-  extension (strings: Iterable[String])
-    def asErrors: Either[List[String], Unit] =
-      if strings.size == 0 then Right(()) else Left(strings.toList)
+  extension (errs: Seq[String])
+    def listString(headline: String = "Errors encountered"): Option[String] =
+      if errs.isEmpty then None
+      else
+        Some(
+          errs
+            .map(e => s"-  $e")
+            .mkString(
+              s"$headline:\n",
+              "\n",
+              ""
+            )
+        )
 
   extension (tpe: Type[_])
     def no: Type[_] =
@@ -36,7 +39,7 @@ trait CompilationFramework(using val q: Quotes) {
       trep.asType match
         case '[a] => Type.of[a].no.typeRepr
 
-  case class ValidatedSchema[A](
+  case class Schema[A](
       name: String,
       compositeUniqueKey: List[String],
       fieldSpecs: List[FieldSpec[_]]
@@ -52,43 +55,42 @@ trait CompilationFramework(using val q: Quotes) {
         case (l, Nil) => l
         case (l, r)   => l :+ CreateSpec.Uniques[Expr, Type](r)
 
-  object ValidatedSchema:
-    def forType[A](using Type[A]): Either[List[String], ValidatedSchema[A]] =
-      for
-        enc <- sqlEncoding[A].left.map(List(_))
-        trep: TypeRepr <- enc match
-          case '{ $row: SQLRow[a] } => Right(TypeRepr.of[a])
-          case _ =>
-            Left(
-              List(
-                s"Target type must derive ${TypeRepr.of[SQLRow].typeSymbol.name} to be qualified as a table."
-              )
-            )
-        sch <- tableSchema[A].left.map(List(_))
-        schema(tname, uniques*) = sch
-        _ <- Either.cond(
-          !tname.isBlank,
-          (),
-          List("Schema name cannot be blank")
-        )
-        fieldSpecs <- FieldSpec.allOf[A]
-        compUnique <- uniques.toList.distinct match
-          case Nil => Right(Nil)
-          case us =>
-            us.collect {
-              case n if !fieldSpecs.exists(fs => fs.name == n) =>
-                s"Field `$n` defined in the composite unique constraint does not exist"
-            }.asErrors
-              .map(_ => us)
-        _ <- fieldSpecs match
-          case Nil =>
-            Left(
-              List(
-                "The type designated as a table must be a `case class` with atleast one field."
-              )
-            )
-          case _ => Right(())
-      yield ValidatedSchema[A](tname, compUnique, fieldSpecs)
+  object Schema:
+    def forType[A](using Type[A]): Validated[String, Schema[A]] =
+      val enc = 
+        for
+          enc <- sqlEncoding[A]
+          trep: TypeRepr <- enc match
+            case '{ $row: SQLRow[a] } => TypeRepr.of[a].asValid
+            case _ =>
+              s"Target type must derive ${TypeRepr.of[SQLRow].typeSymbol.name} to be qualified as a table.".err
+        yield enc
+
+      val sch = 
+        for
+          sch <- tableSchema[A]
+          schema(tname, uniques*) = sch
+          _ ~ fieldSpecs <- {
+            val nameCheck =
+              if !tname.isBlank then pass
+              else "Schema name cannot be blank".err
+            val fs = FieldSpec.allOf[A]
+            nameCheck ~ fs
+          }
+          compUnique <- uniques.toList.distinct match
+            case Nil => Valid(Nil)
+            case us =>
+              us.collect {
+                case n if !fieldSpecs.exists(fs => fs.name == n) =>
+                  s"Field `$n` defined in the composite unique constraint does not exist"
+              }.asErrors(us)
+          _ <- fieldSpecs match
+            case Nil =>
+              "The type designated as a table must be a `case class` with at least one field.".err
+            case _ => pass
+        yield Schema[A](tname, compUnique, fieldSpecs)
+
+      enc ~ sch ^^ { case _ ~ s => s }
 
   case class FieldSpec[A](
       name: String,
@@ -105,14 +107,14 @@ trait CompilationFramework(using val q: Quotes) {
   object FieldSpec:
     def forField[A](name: String)(using
         Type[A]
-    ): Either[List[String], FieldSpec[_ <: Any]] =
+    ): Validated[String, FieldSpec[_ <: Any]] =
       val trep = TypeRepr.of[A]
       val caseFields = trep.typeSymbol.caseFields
       val companion = trep.typeSymbol.companionClass
       for
         si <- caseFields.zipWithIndex
           .find((cf, i) => cf.name == name)
-          .toRight(List(s"Field $name does not exist in ${Type.show[A]}"))
+          .toValid(s"Field $name does not exist in ${Type.show[A]}")
         (s, i) = si
         fieldType = trep.memberType(s)
         fs <- fieldType.asType match
@@ -122,90 +124,85 @@ trait CompilationFramework(using val q: Quotes) {
               .headOption
               .map(Select(Ref(trep.typeSymbol.companionModule), _))
               .map(_.asExprOf[t])
-            for
-              enc <- sqlEncoding[t].left.map(List(_))
-              _ <- enc match
-                case '{ $e: SQLRow[a] } =>
-                  Left(
-                    List(
-                      s"Field ${s.name} cannot derive from ${TypeRepr.of[SQLRow].typeSymbol.name}."
-                    )
-                  )
-                case _ => Right(())
-              m <- sqlMirror[t].left.map(List(_))
-              mtpe = m.asTerm.tpe.asType match
-                case '[SQLMirror[t, x]] => Type.of[x]
-              mods <- List(
-                annotationFor[name](s),
-                annotationFor[pk](s),
-                annotationFor[fk](s),
-                annotationFor[autoinc](s),
-                annotationFor[unique](s),
-                annotationFor[index](s)
-              ) |> Either.sequence map (_.flatten)
-            yield FieldSpec[t](s.name, Type.of[t], mtpe, mods, default)
-        _ <- fs.sqlName.isBlank match
-          case true =>
-            Left(
-              List(
-                s"Provided SQL column name for the case field `${fs.name}` cannot be blank"
-              )
-            )
-          case false => Right(())
-        _ <- fs.mods
-          .collect { case fk(tpe: Type[_], field, onDel) =>
-            List(
-              (fs.tpe, onDel) match
-                case ('[Option[a]], OnDelete.SetNull) => None
-                case (_, OnDelete.SetNull) =>
-                  Some(
-                    s"Field `${fs.name}` is not nullable; `OnDelete.SetNull` can only be specified for nullable columns"
-                  )
-                case _ => None
-              ,
-              tpe match
-                case '[a] =>
-                  TypeRepr
-                    .of[a]
-                    .typeSymbol
-                    .caseFields
-                    .find(_.name == field) match
-                    case Some(symb) =>
-                      TypeRepr.of[a].memberType(symb) match
-                        case reftrep if reftrep.no =:= fs.tpe.typeRepr.no =>
-                          None
-                        case reftrep =>
-                          Some(
-                            s"The Non-Option type of foreign key field `${fs.name}: ${Type
-                                .show(using fs.tpe.no)}` does not match that " +
-                              s"of its referenced field `${field}: ${Type
-                                  .show(using reftrep.no.asType)}` of the " +
-                              s"case class `${Type.show(using tpe)}`"
-                          )
-                    case None =>
-                      Some(
-                        s"Referenced foreign key field `$field` on record ${Type.show[a]} does not exist"
-                      )
-            ).flatten
-          }
-          .flatten
-          .asErrors
+
+            val enc = 
+              for
+                enc <- sqlEncoding[t]
+                _ <- enc match
+                  case '{ $e: SQLRow[a] } =>
+                    s"Field ${s.name} cannot derive from ${TypeRepr.of[SQLRow].typeSymbol.name}.".err
+                  case _ => pass
+              yield enc
+
+            val mtpe = 
+              for
+                m <- sqlMirror[t]
+                mtpe = m.asTerm.tpe.asType match
+                  case '[SQLMirror[t, x]] => Type.of[x]
+              yield mtpe    
+            
+            val mods = List(
+              annotationFor[name](s),
+              annotationFor[pk](s),
+              annotationFor[fk](s),
+              annotationFor[autoinc](s),
+              annotationFor[unique](s),
+              annotationFor[index](s)
+            ).sequence map (_.flatten)
+
+            enc ~ mtpe ~ mods ^^ {
+              case _ ~ mt ~ mo => FieldSpec[t](s.name, Type.of[t], mt, mo.toList, default)
+            }
+        _ <- {
+          val nameCheck = if fs.sqlName.isBlank 
+              then s"Provided SQL column name for the case field `${fs.name}` cannot be blank".err
+              else pass
+          val modsCheck = fs.mods
+            .collect { case fk(tpe: Type[_], field, onDel) =>
+              val v1 = (fs.tpe, onDel) match
+                  case ('[Option[a]], OnDelete.SetNull) => pass
+                  case (_, OnDelete.SetNull) =>
+                      s"Field `${fs.name}` is not nullable; `OnDelete.SetNull` can only be specified for nullable columns".err
+                  case _ => pass
+              val v2 = tpe match
+                  case '[a] =>
+                    TypeRepr
+                      .of[a]
+                      .typeSymbol
+                      .caseFields
+                      .find(_.name == field) match
+                      case Some(symb) =>
+                        TypeRepr.of[a].memberType(symb) match
+                          case reftrep if reftrep.no =:= fs.tpe.typeRepr.no => pass
+                          case reftrep =>
+                              (s"The Non-Option type of foreign key field `${fs.name}: ${Type
+                                  .show(using fs.tpe.no)}` does not match that " +
+                                s"of its referenced field `${field}: ${Type
+                                    .show(using reftrep.no.asType)}` of the " +
+                                s"case class `${Type.show(using tpe)}`").err
+                      case None =>
+                          s"Referenced foreign key field `$field` on record ${Type.show[a]} does not exist".err
+              v1 ~ v2
+            }.sequence
+          nameCheck ~ modsCheck
+        }
       yield fs
 
     def allOf[A](using
         Type[A]
-    ): Either[List[String], List[FieldSpec[_ <: Any]]] =
+    ): Validated[String, List[FieldSpec[_ <: Any]]] =
       val es =
         TypeRepr.of[A].typeSymbol.caseFields.map(cf => forField[A](cf.name))
       for
-        specs <- Either.sequence(es).left.map(_.flatten)
+        specs <- es.sequence
         _ <- specs
           .groupBy(_.sqlName)
           .collect {
             case (n, acc) if acc.length > 1 => s"Duplicate column name: `$n`"
           }
-          .asErrors
-      yield specs
+          .toSeq
+          .asErrors(())
+      yield specs.toList
 
     def forAST(specs: List[FieldSpec[_]]): List[CreateSpec[Expr, Type]] =
       val colDefs = specs.map {
@@ -293,26 +290,26 @@ trait CompilationFramework(using val q: Quotes) {
   )(using Type[P], Type[A]): Expr[A] =
     preprocess('{ $f(using $p) })
 
-  def tableSchema[A](using ta: Type[A]): Either[String, schema] =
+  def tableSchema[A](using ta: Type[A]): Validated[String, schema] =
     for
       ann <- annotationFor[schema](ta.typeRepr.typeSymbol)
-      sch <- ann.toRight(
+      sch <- ann.toValid(
         s"Missing ${Type.show[schema]} annotation for type ${Type.show[A]}"
       )
     yield sch
 
-  def tableName[A](using ta: Type[A]): Either[String, String] =
+  def tableName[A](using ta: Type[A]): Validated[String, String] =
     tableSchema[A].map(_.name)
 
   def annotationFor[T <: scala.annotation.StaticAnnotation](
       symb: Symbol
-  )(using Type[T], FromExpr[T]): Either[String, Option[T]] =
+  )(using Type[T], FromExpr[T]): Validated[String, Option[T]] =
     for
-      opt <- Right(symb.getAnnotation(TypeRepr.of[T].typeSymbol))
-      v <- opt.fold(Right(None)) { term =>
+      opt <- symb.getAnnotation(TypeRepr.of[T].typeSymbol).asValid
+      v <- opt.fold(Valid(None)) { term =>
         Expr
           .unapply(term.asExprOf[T])
-          .toRight(
+          .toValid(
             s"Static annotation ${Type.show[T]} for field ${symb.toString} cannot be unlifted. " +
               "Annotation must be constructed using literal values"
           )
@@ -320,31 +317,22 @@ trait CompilationFramework(using val q: Quotes) {
       }
     yield v
 
-  def sqlEncoding[A](using Type[A]): Either[String, Expr[SQLEncoding.Of[A]]] =
+  def sqlEncoding[A](using
+      Type[A]
+  ): Validated[String, Expr[SQLEncoding.Of[A]]] =
     Expr.summon[SQLEncoding.Of[A]] match
-      case Some(enc) => Right(enc)
+      case Some(enc) => enc.asValid
       case None =>
-        Left(
-          s"Failed to obtain an instances of ${Type.show[SQLEncoding.Of[A]]}"
-        )
+        s"Failed to obtain an instances of ${Type.show[SQLEncoding.Of[A]]}".err
 
-  def sqlMirror[A](using Type[A]): Either[String, Expr[SQLMirror.Of[A]]] =
+  def sqlMirror[A](using Type[A]): Validated[String, Expr[SQLMirror.Of[A]]] =
     Expr.summon[SQLMirror.Of[A]] match
-      case Some(enc) => Right(enc)
+      case Some(enc) => enc.asValid
       case None =>
-        Left(s"Failed to obtain an instances of ${Type.show[SQLMirror.Of[A]]}")
+        "Failed to obtain an instances of ${Type.show[SQLMirror.Of[A]]}".err
 
-  def validateSchema[A](using Type[A]): Either[String, ValidatedSchema[A]] =
-    ValidatedSchema
-      .forType[A]
-      .left
-      .map(
-        _.map(e => s"-  $e").mkString(
-          s"Schema validation failed for type ${Type.show[A]}:\n",
-          "\n",
-          ""
-        )
-      )
+  def validateSchema[A](using Type[A]): Validated[String, Schema[A]] =
+    Schema.forType[A]
 
   object assertions:
     def validSchema[A](using Type[A]): Unit =
@@ -360,43 +348,49 @@ trait CompilationFramework(using val q: Quotes) {
             s"Could not obtain an instance for ${Type.show[T]}"
           )
 
-    def validSchema[T](using Type[T]): ValidatedSchema[T] =
+    def validSchema[T](using Type[T]): Schema[T] =
       self.validateSchema[T] match
-        case Right(n)  => n
-        case Left(err) => throw GraceException(err)
+        case Valid(n) => n
+        case inv @ Invalid(_, _) =>
+          throw GraceException(
+            inv.errors
+              .listString(s"Error validating schema for type ${Type.show[T]}")
+              .get
+          )
 
     def tableName[T](using Type[T]): String = tableSchema[T].name
 
     def tableSchema[T](using Type[T]): schema =
       self.tableSchema[T] match
-        case Right(n)  => n
-        case Left(err) => throw GraceException(err)
+        case Valid(n) => n
+        case inv @ Invalid(_, _) =>
+          throw GraceException(
+            inv.errors
+              .listString(s"Error obtaining schema for type ${Type.show[T]}")
+              .get
+          )
 
     def fieldSpecs[T](using Type[T]): List[FieldSpec[_]] =
       FieldSpec.allOf[T] match
-        case Right(specs) => specs
-        case Left(errs) =>
+        case Valid(specs) => specs
+        case inv @ Invalid(_, _) =>
           throw GraceException(
-            errs
-              .map(e => s"-  $e")
-              .mkString(
-                s"Error obtaining field information for type ${Type.show[T]}:\n",
-                "\n",
-                ""
+            inv.errors
+              .listString(
+                s"Error obtaining field information for type ${Type.show[T]}"
               )
+              .get
           )
 
     def fieldSpec[T](name: String)(using Type[T]): FieldSpec[_] =
       FieldSpec.forField[T](name) match
-        case Right(fs) => fs
-        case Left(errs) =>
+        case Valid(fs) => fs
+        case inv @ Invalid(_, _) =>
           throw GraceException(
-            errs
-              .map(e => s"-  $e")
-              .mkString(
-                s"Error obtaining field information for type ${Type.show[T]}:\n",
-                "\n",
-                ""
+            inv.errors
+              .listString(
+                s"Error obtaining field information for type ${Type.show[T]}"
               )
+              .get
           )
 }

@@ -107,7 +107,8 @@ trait VendorTreeCompiler[V]:
           .distinct
           .foldLeft[List[String]](Nil) { (msgs, trep) => 
               trep.asType match 
-                case '[a] => validateSchema[a].swap.toOption.toList ++ msgs   
+                case '[a] => 
+                  validateSchema[a].errors.listString(s"Error validating schema for type `${Type.show[a]}`").fold(Nil)(_ :: Nil) ++ msgs   
           } match
             case Nil  => ()
             case errs => throw GraceException(errs.mkString("\n"))

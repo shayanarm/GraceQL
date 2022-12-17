@@ -4,6 +4,8 @@ import graceql.core.*
 import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
 import scala.quoted.*
+import graceql.data.Validated
+import graceql.data.Validated.*
 
 object Compiler extends VendorTreeCompiler[MySQL]:
   import Node.*
@@ -105,7 +107,7 @@ object Compiler extends VendorTreeCompiler[MySQL]:
 
       override def validateSchema[A](using
           Type[A]
-      ): Either[String, ValidatedSchema[A]] =
+      ): Validated[String, Schema[A]] =
         for
           scheme <- super.validateSchema[A]
           _ <- scheme.fieldSpecs.collect {
@@ -114,20 +116,11 @@ object Compiler extends VendorTreeCompiler[MySQL]:
               mods.collectFirst { case _: fk =>
                 (n, mtpe)
               }
-          }.flatten match
-            case Nil => Right(())
-            case vs =>
-              Left(
-                vs.map((n, tpe) =>
-                  s"Field ${n} with the underlying type ${Type.show(using tpe)} cannot be a foreign key"
-                ).map(e => s"-  $e")
-                  .mkString(
-                    s"Further schema validation for the MySQL backend failed for type ${Type
-                        .show[A]}:\n",
-                    "\n",
-                    ""
-                  )
-              )
+          }
+          .flatten
+          .map((n, tpe) =>
+              s"Field ${n} with the underlying type ${Type.show(using tpe)} cannot be a foreign key"
+            ).asErrors(())
         yield scheme
 
       override def typeCheck(raw: Node[Expr, Type]): Node[Expr, Type] =
