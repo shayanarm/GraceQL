@@ -6,6 +6,8 @@ import graceql.context.jdbc.*
 import graceql.quoted.CompileOps
 import scala.util.Try
 
+type JDBCCompilationFramework = JDBCSchemaChecks
+
 trait VendorTreeCompiler[V]:
   self =>
 
@@ -48,8 +50,10 @@ trait VendorTreeCompiler[V]:
       override val q: Quotes,
       tv: Type[V],
       ts: Type[S]
-  ) extends CompilationFramework(using q):
+  ) extends JDBCCompilationFramework(using q):
     import CompileOps.*
+    import graceql.data.Validated
+    import graceql.data.Validated.*
     import q.reflect.{
       Tree => _,
       Select => _,
@@ -58,6 +62,9 @@ trait VendorTreeCompiler[V]:
       Symbol => _,
       *
     }
+    type Requirements = SchemaRequirements  
+    val require = new SchemaRequirements {}
+
     type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
     given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
 
@@ -80,26 +87,25 @@ trait VendorTreeCompiler[V]:
         ta: Type[A]
     ): Expr[DBIO[A]] =
 
-      val fallback: PartialFunction[Expr[Any], Node[Expr, Type]] = { case e =>
-        throw GraceException(
-          s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}"
-        )
+      val fallback: PartialFunction[Expr[Any], Result[Node[Expr, Type]]] = { case e =>
+          s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}".err
       }
-      def toNative(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
+      def toNative(ctx: Context): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
         partials.foldRight(fallback) { (i, c) =>
           i(toNative, nameGen.nextName)(ctx).orElse(c)
         }
 
-      val pipe =
-        appliedToPlaceHolder[Q, A] andThen
-          preprocess[A] andThen
-          toNative(Context()) andThen
-          typeCheck andThen
-          toDBIO[A]
-      pipe(expr)
+      val result = for
+        r1 <- successfulEval(appliedToPlaceHolder[Q, A](expr)).mapError(_.getMessage)
+        r2 <- successfulEval(preprocess[A](r1)).mapError(_.getMessage)
+        r3 <- toNative(Context())(r2)
+        r4 <- typeCheck(r3)
+      yield toDBIO[A](r4)
+
+      require(result)("Query compilation failed")
 
     object checks:
-      def schemas(tree: Node[Expr, Type]): Unit =
+      def schemas(tree: Node[Expr, Type]) =
         tree
           .fold[List[TypeRepr]](Nil)(tps => {
             case Node.Table(_, tpe) => TypeRepr.of(using tpe) :: tps
@@ -110,12 +116,13 @@ trait VendorTreeCompiler[V]:
                 case '[a] => 
                   validateSchema[a].errors.listString(s"Error validating schema for type `${Type.show[a]}`").fold(Nil)(_ :: Nil) ++ msgs   
           } match
-            case Nil  => ()
-            case errs => throw GraceException(errs.mkString("\n"))
+            case Nil  => pass
+            case errs => errs.asErrors(())
 
-    protected def typeCheck(tree: Node[Expr, Type]): Node[Expr, Type] =
-      checks.schemas(tree)
-      tree.transform.pre {
+    protected def typeCheck(tree: Node[Expr, Type]): Result[Node[Expr, Type]] =
+      for
+       _ <- checks.schemas(tree)
+      yield tree.transform.pre {
         case Node.CreateTable(t @ Node.Table(_, tpe), None) =>
           tpe match
             case '[a] =>
@@ -357,14 +364,17 @@ abstract class CompileModule[V, S[+X] <: Iterable[X]](using
     override val q: Quotes,
     val tv: Type[V],
     val ts: Type[S]
-) extends CompilationFramework(using q):
+) extends JDBCCompilationFramework(using q):
 
   import q.reflect.*
 
   type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
   given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
 
+  type Requirements = SchemaRequirements  
+  val require = new SchemaRequirements {}    
+
   def apply(
-      recurse: Context => Expr[Any] => Node[Expr, Type],
+      recurse: Context => Expr[Any] => Result[Node[Expr, Type]],
       nameGen: () => String
-  )(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]]
+  )(ctx: Context): PartialFunction[Expr[Any], Result[Node[Expr, Type]]]

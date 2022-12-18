@@ -6,12 +6,16 @@ import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
 import graceql.quoted.CompileOps
 import scala.annotation.targetName
+import scala.util.Failure
+import scala.util.Success
 
 class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
+  import graceql.data.Validated
+  import Validated.*
   def apply(
-      recurse: Context => Expr[Any] => Node[Expr, Type],
+      recurse: Context => Expr[Any] => Result[Node[Expr, Type]],
       nameGen: () => String
-  )(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
+  )(ctx: Context): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
     import q.reflect.{
       Select => _,
       Block => SBlock,
@@ -21,20 +25,21 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
 
     {
       case '{ $i: t } if ctx.isRegisteredIdent(i.asTerm) =>
-        Node.Ref(ctx.refMap(i.asTerm))
+        Node.Ref(ctx.refMap(i.asTerm)).asValid
       case '{ $a: t } if ctx.literalEncodable(a) =>
         a match
-          case '{$c: Class[t]} => Node.TypeLit(Type.of[t])
-          case '{ $v: graceql.context.jdbc.Table[V, a] } =>            
-            Node.Table[Expr, Type, a](Expr(require.tableName[a]), Type.of[a])
+          case '{$c: Class[t]} => Node.TypeLit(Type.of[t]).asValid
+          case '{ $v: graceql.context.jdbc.Table[V, a] } => 
+            tableName[a].map(n => Node.Table[Expr, Type, a](Expr(n), Type.of[a]))            
           case _ =>
-            Node.Literal[Expr, Type, t](a)
+            Node.Literal[Expr, Type, t](a).asValid
       // Multiple statements Support      
       case '{$stmt: a; $expr: b} => 
-        val head = recurse(ctx)(stmt)
-        recurse(ctx)(expr) match
-          case Node.Block(ns) => Node.Block(head :: ns)
-          case n => Node.Block(List(head, n))              
+        for
+          (head, tail) <- recurse(ctx)(stmt) ~ recurse(ctx)(expr)
+        yield tail match
+            case Node.Block(ns) => Node.Block(head :: ns)
+            case n => Node.Block(List(head, n))              
       case '{
             ($c: Q).unlift(
               $block: DBIO[a]
@@ -49,25 +54,28 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
                   Varargs(args)
                 }: _*)
               } =>
-            val nativeArgs = args.map(recurse(ctx))
-            parseNative(nativeArgs)(sc)
+            for 
+              nativeArgs <- args.map(recurse(ctx)).sequence
+              parsed <- parseNative(nativeArgs)(sc)
+            yield parsed
           case '{
                 ($c: Q).typed($native: DBIO[a]): DBIO[b]
               } =>
-            Node.TypeAnn(recurse(ctx)(native), Type.of[b])
+            recurse(ctx)(native).map(r => Node.TypeAnn(r, Type.of[b]))
           case e =>
-            throw GraceException(
-              "Native code must only be provided using the `lift` method or the `native` interpolator"
-            )          
+              "Native code must only be provided using the `lift` method or the `native` interpolator".err
     }
 
   protected def parseNative(
       args: Seq[Node[Expr, Type]]
-  )(sce: Expr[StringContext]): Node[Expr, Type] =
+  )(sce: Expr[StringContext]): Result[Node[Expr, Type]] =
     import q.reflect.*
     val sc = sce match
       case '{ StringContext(${ Varargs(Exprs(parts)) }: _*) } =>
         StringContext(parts*)
       case '{ new StringContext(${ Varargs(Exprs(parts)) }: _*) } =>
         StringContext(parts*)
-    Node.parse(sc)(args).get
+    Node.parse(sc)(args) match
+      case Failure(exception) => s"SQL Tree parse error: ${exception.getMessage()}".err
+      case Success(value) => value.asValid
+    

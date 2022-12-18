@@ -110,22 +110,24 @@ object Compiler extends VendorTreeCompiler[MySQL]:
       ): Validated[String, Schema[A]] =
         for
           scheme <- super.validateSchema[A]
-          _ <- scheme.fieldSpecs.collect {
-            case FieldSpec(n, _, mtpe, mods, _)
-                if mtpe.typeRepr.no =:= TypeRepr.of[String] =>
-              mods.collectFirst { case _: fk =>
-                (n, mtpe)
-              }
-          }
-          .flatten
-          .map((n, tpe) =>
+          _ <- scheme.fieldSpecs
+            .collect {
+              case FieldSpec(n, _, mtpe, mods, _)
+                  if mtpe.typeRepr.no =:= TypeRepr.of[String] =>
+                mods.collectFirst { case _: fk =>
+                  (n, mtpe)
+                }
+            }
+            .flatten
+            .map((n, tpe) =>
               s"Field ${n} with the underlying type ${Type.show(using tpe)} cannot be a foreign key"
-            ).asErrors(())
+            )
+            .asErrors(())
         yield scheme
 
-      override def typeCheck(raw: Node[Expr, Type]): Node[Expr, Type] =
-        val tree = super.typeCheck(raw)
-        tree.transform.pre { case TypeAnn(tree, _) =>
+      override def typeCheck(raw: Node[Expr, Type]): Result[Node[Expr, Type]] =
+        for tree <- super.typeCheck(raw)
+        yield tree.transform.pre { case TypeAnn(tree, _) =>
           tree
         }
     }

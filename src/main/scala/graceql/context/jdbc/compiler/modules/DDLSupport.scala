@@ -9,9 +9,9 @@ import scala.annotation.targetName
 
 class DDLSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
   def apply(
-      recurse: Context => Expr[Any] => Node[Expr, Type],
+      recurse: Context => Expr[Any] => Result[Node[Expr, Type]],
       nameGen: () => String
-  )(ctx: Context): PartialFunction[Expr[Any], Node[Expr, Type]] =
+  )(ctx: Context): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
     import q.reflect.{
       Select => _,
       Block => _,

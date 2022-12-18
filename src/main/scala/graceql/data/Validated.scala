@@ -2,6 +2,9 @@ package graceql.data
 
 import scala.collection.WithFilter
 import java.util.NoSuchElementException
+import scala.util.Try
+import scala.util.Failure
+import scala.util.Success
 
 enum Validated[E, +A]:
     case Valid[E, A](value: A) extends Validated[E, A]
@@ -61,6 +64,13 @@ object Validated:
     object FromString:
         given FromString[String] = a => a
         given convertible[A](using c: Conversion[String, A]): FromString[A] = a => c(a)
+
+    def fromTry[A](t: Try[A]): Validated[Throwable, A] = t match
+        case Failure(exception) => Invalid(exception, Seq.empty)
+        case Success(value) => Valid(value)
+    
+    inline def successfulEval[A](run: => A): Validated[Throwable, A] = fromTry(Try(run))
+        
 
     inline def pass[E]: Validated[E, Unit] = Valid(())
 

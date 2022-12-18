@@ -9,23 +9,29 @@ import scala.annotation.targetName
 
 object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
   import Node.*
-  protected def binary(recurse: Node[Expr, Type] => Expr[String])(using Quotes): PartialFunction[Node[Expr,Type], Expr[String]] =
+  protected def binary(recurse: Node[Expr, Type] => Expr[String])(using
+      Quotes
+  ): PartialFunction[Node[Expr, Type], Expr[String]] =
     PartialFunction.empty
 
   def typeString[A](using q: Quotes)(tpe: Type[A]): Expr[String] =
-    Expr(q.reflect.TypeRepr.of(using tpe).show(using q.reflect.Printer.TypeReprShortCode))
+    Expr(
+      q.reflect.TypeRepr
+        .of(using tpe)
+        .show(using q.reflect.Printer.TypeReprShortCode)
+    )
 
   override def delegate[S[+X] <: Iterable[X]](using
       Quotes,
       Type[GenSQL],
       Type[S]
-  ): Delegate[S] = 
+  ): Delegate[S] =
     new Delegate[S] {
       import q.reflect.*
 
-      override def typeCheck(raw: Node[Expr, Type]): Node[Expr, Type] =
-        val tree = super.typeCheck(raw)
-        tree.transform.pre { case TypeAnn(tree, _) =>
+      override def typeCheck(raw: Node[Expr, Type]): Result[Node[Expr, Type]] =
+        for tree <- super.typeCheck(raw)
+        yield tree.transform.pre { case TypeAnn(tree, _) =>
           tree
         }
     }
