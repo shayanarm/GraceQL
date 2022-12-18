@@ -3,7 +3,7 @@ package graceql.core
 import scala.quoted.Quotes
 import graceql.data.Validated
 import scala.quoted.*
-import graceql.data.Applicative.pure
+import graceql.syntax.*
 
 trait CompilationFramework(using val q: Quotes) {
     import q.reflect.*

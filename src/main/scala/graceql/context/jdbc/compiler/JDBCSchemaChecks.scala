@@ -7,7 +7,6 @@ import graceql.context.jdbc.compiler.*
 import graceql.quoted.CompileOps
 import graceql.syntax.*
 import graceql.data.{Validated, ~}
-import graceql.data.Applicative.*
 
 trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramework {
   self =>
@@ -115,7 +114,7 @@ trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramewor
                 mtpe = m.asTerm.tpe.asType match
                   case '[SQLMirror[t, x]] => Type.of[x]
               yield mtpe
-
+            
             val v3 = List(
               annotationFor[name](s),
               annotationFor[pk](s),

@@ -5,28 +5,30 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Promise
 import scala.util.Try
 import java.{util => ju}
+import graceql.syntax.*
 
 trait Functor[M[_]]:
-  extension [A](ma: M[A]) def map[B](f: A => B): M[B]
+  extension [A](ma: M[A]) 
+    def map[B](f: A => B): M[B]
+    inline def ^^[B](f: A => B): M[B] = map(f)
 
 trait Applicative[M[_]] extends Functor[M]:
   extension [A](a: A) @`inline` def pure: M[A]
   extension [A](ma: M[A])
 
     def ap[B](mf: M[A => B]): M[B]
-
+    
+    def zip[B](mb: M[B]): M[(A, B)] = ma.ap(mb.map(b => a => (a, b)))
+    
+    def ~[B](mb: M[B]): M[(A, B)] = zip(mb)
+    
     inline def <*>[B](f: M[A => B]): M[B] = ap(f)
     def map[B](f: A => B): M[B] =
       ma <*> f.pure
 
-private trait ControlMethods:
-  extension [A](a: A)
-    inline def pure[M[_]](using ap: Applicative[M]): M[A] = ap.pure(a)
-    inline def lift[M[_]](using ap: Applicative[M]): M[A] = a.pure
+    inline def pass[M[_]](using app: Applicative[M]): M[Unit] = ().pure
 
-  inline def pass[M[_]](using ap: Applicative[M]): M[Unit] = ().pure
-
-object Applicative extends ControlMethods
+object Applicative
 
 trait Monad[M[_]] extends Applicative[M]:
   extension [A](ma: M[A])
@@ -38,7 +40,7 @@ trait Monad[M[_]] extends Applicative[M]:
     inline def bind[B](f: A => M[B]): M[B] = flatMap(f)
     def ap[B](mf: M[A => B]): M[B] = flatMap(a => mf.flatMap(f => f(a).pure))
 
-object Monad extends ControlMethods
+object Monad
 
 trait MonadPlus[M[_]] extends Monad[M]:
   extension [A](ma: M[A])
@@ -49,7 +51,7 @@ trait MonadPlus[M[_]] extends Monad[M]:
 
     inline def ++(other: M[A]): M[A] = concat(other)
 
-object MonadPlus extends ControlMethods
+object MonadPlus
 
 trait MonadZero[M[_]] extends Monad[M]:
   extension [A](ma: M[A])
@@ -58,13 +60,13 @@ trait MonadZero[M[_]] extends Monad[M]:
 
     def withFilter(pred: A => Boolean): scala.collection.WithFilter[A, M]
 
-object MonadZero extends ControlMethods
+object MonadZero
 
 trait MonadError[M[_]] extends Monad[M]:
   def raiseError[A](e: Throwable): M[A]
   extension [A](ma: M[A]) def recoverWith(f: Throwable => M[A]): M[A]
 
-object MonadError extends ControlMethods:
+object MonadError:
   given futureME(using ec: ExecutionContext): MonadError[Future] with
     def raiseError[A](e: Throwable): Future[A] = Future.failed(e)
     extension [A](a: A) @`inline` def pure: Future[A] = Future.successful(a)
@@ -101,6 +103,52 @@ object MonadError extends ControlMethods:
       ): Either[Throwable, A] =
         ma.left.flatMap[Throwable, A](f)
 
+trait Traverse[F[_]]:
+  def traverse[G[_]: Applicative, A, B](f: A => G[B])(fa: F[A]): G[F[B]]
+
+  def sequence[G[_]: Applicative, A](fa: F[G[A]]): G[F[A]] = traverse[G, G[A], A](identity)(fa)
+
+object Traverse:
+
+  given Traverse[List] with 
+    override def traverse[G[_]: Applicative, A, B](f: A => G[B])(fa: List[A]): G[List[B]] =
+        fa.foldRight(List.empty[B].pure[G]) { (a, acc) =>
+          f(a).zip(acc).map((a,b) => a :: b)
+        }
+
+  given Traverse[Vector] with 
+    override def traverse[G[_]: Applicative, A, B](f: A => G[B])(fa: Vector[A]): G[Vector[B]] =
+        fa.foldRight(Vector.empty[B].pure[G]) { (a, acc) =>
+          f(a).zip(acc).map((a,b) => a +: b)
+        }
+        
+  given Traverse[IndexedSeq] with 
+    override def traverse[G[_]: Applicative, A, B](f: A => G[B])(fa: IndexedSeq[A]): G[IndexedSeq[B]] =
+        fa.foldRight(IndexedSeq.empty[B].pure[G]) { (a, acc) =>
+          f(a).zip(acc).map((a,b) => a +: b)
+        }
+
+  given Traverse[LazyList] with 
+    override def traverse[G[_]: Applicative, A, B](f: A => G[B])(fa: LazyList[A]): G[LazyList[B]] =
+        fa.foldRight(LazyList.empty[B].pure[G]) { (a, acc) =>
+          f(a).zip(acc).map((a,b) => a +: b)
+        }
+
+  given Traverse[Option] with 
+    override def traverse[G[_]: Applicative, A, B](f: A => G[B])(fa: Option[A]): G[Option[B]] =
+        fa.fold(Option.empty[B].pure[G]) {v => f(v).map(Some(_))}
+  
+  given Traverse[Seq] with 
+    override def traverse[G[_]: Applicative, A, B](f: A => G[B])(fa: Seq[A]): G[Seq[B]] =
+        fa.foldRight(Seq.empty[B].pure[G]) { (a, acc) =>
+          f(a).zip(acc).map((a,b) => a +: b)
+        }  
+  given Traverse[Iterable] with
+    override def traverse[G[_]: Applicative, A, B](f: A => G[B])(fa: Iterable[A]): G[Iterable[B]] =
+        fa.foldRight(Iterable.empty[B].pure[G]) { (a, acc) =>
+          f(a).zip(acc).map((a,b) => List(a) ++ b)
+        }        
+
 trait RunLifted[M[_]]:
   def apply[A](a: () => A): M[A]
 
@@ -109,6 +157,10 @@ object RunLifted:
   given identityRun: RunLifted[[x] =>> x] with
 
     def apply[A](a: () => A): A = a()
+
+  given opaqueIdentityRun: RunLifted[Id] with
+
+    def apply[A](a: () => A): Id[A] = Id(a())
 
   given runFuture[A](using
       ec: ExecutionContext

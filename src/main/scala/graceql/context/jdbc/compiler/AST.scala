@@ -4,8 +4,10 @@ import graceql.core.*
 import scala.util.parsing.combinator._
 import scala.util.Try
 import graceql.core.GraceException
+import graceql.data.{Id, Monad, ~}
 import scala.util.matching.Regex
 import scala.quoted.*
+import graceql.syntax.*
 
 enum JoinType:
   case Inner extends JoinType
@@ -152,11 +154,11 @@ enum Node[L[_], T[_]]:
   case DropTable[L[_], T[_]](table: Node[L, T]) extends Node[L, T]
   case CreateTable[L[_], T[_]](table: Node[L, T], specs: Option[List[CreateSpec[L,T]]]) extends Node[L, T]
   
-  protected def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
-    val g = f.orElse { case t => t }
-    val node = g(this)
-    node match
-      case Literal(_) => node
+
+  private def trans[M[_]](order: Node.Traversal)(f: PartialFunction[Node[L, T], M[Node[L, T]]])(using m: Monad[M]): M[Node[L, T]] =
+    val g = f.orElse { case t => m.pure(t) }
+    val k: Node[L, T] => M[Node[L, T]] = node => node match
+      case Literal(_) => node.pure[M]
       case Select(
             distinct,
             columns,
@@ -168,103 +170,53 @@ enum Node[L[_], T[_]]:
             offset,
             limit
           ) =>
-        Select(
-          distinct,
-          columns.pre(f),
-          from.pre(f),
-          joins.map { case (jt, s, o) =>
-            (jt, s.pre(f), o.pre(f))
-          },
-          where.map(_.pre(f)),
-          groupBy.map { case (es, h) =>
-            (es.pre(f), h.map(_.pre(f)))
-          },
-          orderBy.map { case (t, o) => (t.pre(f), o) },
-          offset.map(_.pre(f)),
-          limit.map(_.pre(f))
-        )
-      case Star()          => node
-      case Column(_)       => node
-      case Tuple(elems)    => Tuple(elems.map(_.pre(f)))
-      case Table(_, _)     => node
-      case Values(_)       => node
-      case Dual()          => node
-      case As(t, n)        => As(t.pre(f), n)
-      case Ref(_)          => node
-      case SelectCol(t, c) => SelectCol(t.pre(f), c.pre(f))
+            columns.trans[M](order)(f)
+              ~ from.trans[M](order)(f)
+              ~ joins.traverse { case (jt, s, o) =>
+                s.trans[M](order)(f).zip(o.trans[M](order)(f)).map((a,b) => (jt, a, b))
+              }
+              ~ where.traverse(_.trans[M](order)(f))
+              ~ groupBy.traverse { case (es, h) =>
+                es.trans[M](order)(f).zip(h.traverse(_.trans[M](order)(f)))
+              }
+              ~ orderBy.traverse { case (t, o) => t.trans[M](order)(f).map((_, o)) }
+              ~ offset.traverse(_.trans[M](order)(f))
+              ~ limit.traverse(_.trans[M](order)(f))
+              ^^ { case a ~ b ~ c ~ d ~ e ~ f ~ g ~ h =>
+                Select(distinct, a, b, c, d, e, f, g, h)
+              }
+      case Star()          => node.pure[M]
+      case Column(_)       => node.pure[M]
+      case Tuple(elems)    => elems.traverse(_.trans[M](order)(f)).map(Tuple(_))
+      case Table(_, _)     => node.pure[M]
+      case Values(_)       => node.pure[M]
+      case Dual()          => node.pure[M]
+      case As(t, n)        => t.trans[M](order)(f).map(As(_, n))
+      case Ref(_)          => node.pure[M]
+      case SelectCol(t, c) => t.trans[M](order)(f) ~ c.trans[M](order)(f) ^^ (SelectCol(_,_))
       case FunApp(n, args, tpe) =>
-        FunApp(n, args.map(_.pre(f)), tpe)
-      case TypeLit(_)      => node
-      case Cast(t, tpe)    => Cast(t.pre(f), tpe)
-      case TypeAnn(t, tpe) => TypeAnn(t.pre(f), tpe)
-      case Null()          => node
+        args.traverse(_.trans[M](order)(f)).map(FunApp(n, _, tpe))
+      case TypeLit(_)      => node.pure[M]
+      case Cast(t, tpe)    => t.trans[M](order)(f).map(Cast(_, tpe))
+      case TypeAnn(t, tpe) => t.trans[M](order)(f).map(TypeAnn(_, tpe))
+      case Null()          => node.pure[M]
       case Any(c, o, s) =>
-        Any(c.pre(f), o, s.pre(f))
+        c.trans[M](order)(f) ~ s.trans[M](order)(f) ^^ (Any(_, o ,_))
       case All(c, o, s) =>
-        All(c.pre(f), o, s.pre(f))
+        c.trans[M](order)(f) ~ s.trans[M](order)(f) ^^ (All(_, o, _))        
       case Union(l, r) =>
-        Union(l.pre(f), r.pre(f))
-      case Block(stmts) => Block(stmts.map(_.pre(f)))
-      case DropTable(t) => DropTable(t.pre(f))
-      case CreateTable(t, s) => CreateTable(t.pre(f), s)
+        l.trans[M](order)(f) ~ r.trans[M](order)(f) ^^ (Union(_,_))
+      case Block(stmts) => stmts.traverse(_.trans[M](order)(f)).map(Block(_))
+      case DropTable(t) => t.trans[M](order)(f).map(DropTable(_))
+      case CreateTable(t, s) => t.trans[M](order)(f).map(CreateTable(_, s))
 
-  protected def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] =
-    val g = f.orElse { case t => t }
-    val n = this match
-      case Literal(_) => this
-      case Select(
-            distinct,
-            columns,
-            from,
-            joins,
-            where,
-            groupBy,
-            orderBy,
-            limit,
-            offset
-          ) =>
-        Select(
-          distinct,
-          columns.post(f),
-          from.post(f),
-          joins.map { case (jt, s, o) =>
-            (jt, s.post(f), o.post(f))
-          },
-          where.map(_.post(f)),
-          groupBy.map { case (es, h) =>
-            (es.post(f), h.map(_.post(f)))
-          },
-          orderBy.map { case (t, o) => (t.post(f), o) },
-          offset.map(_.post(f)),
-          limit.map(_.post(f))
-        )
-      case Star()          => this
-      case Column(_)       => this
-      case Tuple(elems)    => Tuple(elems.map(_.post(f)))
-      case Table(_, _)     => this
-      case Values(_)       => this
-      case Dual()          => this
-      case As(t, n)        => As(t.post(f), n)
-      case Ref(_)          => this
-      case SelectCol(t, c) => SelectCol(t.post(f), c.pre(f))
-      case FunApp(n, args, tpe) =>
-        FunApp(n, args.map(_.post(f)), tpe)
-      case TypeLit(_)      => this
-      case Cast(t, tpe)    => Cast(t.post(f), tpe)
-      case TypeAnn(t, tpe) => TypeAnn(t.post(f), tpe)
-      case Null()          => this
-      case Any(c, o, s) =>
-        Any(c.post(f), o, s.post(f))
-      case All(c, o, s) =>
-        All(c.post(f), o, s.post(f))
-      case Union(l, r) =>
-        Union(l.post(f), r.post(f))
-      case Block(stmts) => Block(stmts.map(_.post(f)))
-      case DropTable(t) => DropTable(t.post(f))
-      case CreateTable(t, s) => CreateTable(t.post(f), s)
-    g(n)
+    order match
+      case Node.Traversal.Pre => g(this).flatMap(k)      
+      case Node.Traversal.Post => k(this).flatMap(g)
+  
+  private inline def fold[A](f: A => PartialFunction[Node[L, T], A]): A => A = 
+      initial => self.fold[A](initial)(f)
 
-  protected inline def fold[A](f: A => PartialFunction[Node[L, T], A]): A => A = initial => fold(initial)(f)
   def fold[A](initial: A)(f: A => PartialFunction[Node[L, T], A]): A =
     inline def composed: A => A = this match
       case Literal(_) => identity
@@ -409,8 +361,14 @@ enum Node[L[_], T[_]]:
       }))
 
   object transform:
-    inline def pre(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] = self.pre(f)
-    inline def post(f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] = self.post(f)
+    inline def pre[M](f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] = 
+      preM[Id](f.andThen(Id(_))).unwrap
+    inline def preM[M[_] : Monad](f: PartialFunction[Node[L, T], M[Node[L, T]]]): M[Node[L, T]] = 
+      self.trans[M](Node.Traversal.Pre)(f)      
+    inline def post[M](f: PartialFunction[Node[L, T], Node[L, T]]): Node[L, T] = 
+      postM[Id](f.andThen(Id(_))).unwrap
+    inline def postM[M[_] : Monad](f: PartialFunction[Node[L, T], M[Node[L, T]]]): M[Node[L, T]] = 
+      self.trans[M](Node.Traversal.Post)(f)
     inline def lits[L2[_]](f: [A] => L[A] => L2[A]): Node[L2, T] = self.lits(f)
     inline def types[T2[_]](f: [A] => T[A] => T2[A]): Node[L, T2] = self.types(f)
     inline def both[L2[_], T2[_]](
@@ -419,6 +377,10 @@ enum Node[L[_], T[_]]:
       ): Node[L2, T2] = self.both(fl, ft)        
 
 object Node:
+  private enum Traversal:
+    case Pre
+    case Post
+
   inline def parse[L[_], T[_]](sc: StringContext)(
       args: Seq[Node[L, T]]
   ): Try[Node[L, T]] =

@@ -8,7 +8,7 @@ import graceql.quoted.CompileOps
 import scala.annotation.targetName
 import scala.util.Failure
 import scala.util.Success
-import graceql.data.Applicative.pure
+import graceql.syntax.*
 
 class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
   import graceql.data.Validated
@@ -56,7 +56,7 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
                 }: _*)
               } =>
             for 
-              nativeArgs <- args.map(recurse(ctx)).sequence
+              nativeArgs <- args.traverse(recurse(ctx))
               parsed <- parseNative(nativeArgs)(sc)
             yield parsed
           case '{

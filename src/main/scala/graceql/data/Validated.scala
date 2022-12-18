@@ -28,10 +28,7 @@ enum Validated[E, +A]:
         case Valid(v) => Seq.empty
         case Invalid(h, es) => h +: es
 
-    inline def zip[B](other: Validated[E, B]): Validated[E, A ~ B] =
-        this.ap(other.map(b => a => (a, b)))    
-
-    inline def ~[B](other: Validated[E, B]): Validated[E, A ~ B] = zip(other)
+    inline def ~[B](other: Validated[E, B]): Validated[E, A ~ B] = this.zip(other)
 
     inline def ^^[B](f: A => B) = this.map(f)
 
@@ -106,9 +103,3 @@ object Validated:
                 case Valid(a) => f(a)
                 case other => other.asInstanceOf[Validated[E, B]]
     }
-
-    extension [E, A](es: Seq[Validated[E, A]])
-        def sequence: Validated[E, Seq[A]] =
-            es.foldLeft[Validated[E, Seq[A]]](Valid(Nil)) { (c, i) =>
-                c.zip(i).map {case l ~ r => r +: l}
-            }.map(_.reverse)

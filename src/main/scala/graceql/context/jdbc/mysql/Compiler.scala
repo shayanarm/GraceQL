@@ -127,7 +127,5 @@ object Compiler extends VendorTreeCompiler[MySQL]:
 
       override def typeCheck(raw: Node[Expr, Type]): Result[Node[Expr, Type]] =
         for tree <- super.typeCheck(raw)
-        yield tree.transform.pre { case TypeAnn(tree, _) =>
-          tree
-        }
+        yield tree.transform.pre { case TypeAnn(tree, _) => tree}
     }

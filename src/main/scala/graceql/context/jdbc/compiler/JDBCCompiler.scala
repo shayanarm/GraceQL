@@ -2,6 +2,7 @@ package graceql.context.jdbc.compiler
 
 import scala.quoted.*
 import graceql.core.*
+import graceql.syntax.*
 import graceql.context.jdbc.*
 import graceql.data.Applicative.*
 import graceql.quoted.CompileOps
@@ -105,30 +106,11 @@ trait VendorTreeCompiler[V]:
 
       require(result)("Query compilation failed")
 
-    object checks:
-      def schemas(tree: Node[Expr, Type]) =
-        tree
-          .fold[List[TypeRepr]](Nil)(tps => {
-            case Node.Table(_, tpe) => TypeRepr.of(using tpe) :: tps
-          })
-          .distinct
-          .foldLeft[List[String]](Nil) { (msgs, trep) => 
-              trep.asType match 
-                case '[a] => 
-                  validateSchema[a].errors.listString(s"Error validating schema for type `${Type.show[a]}`").toList ++ msgs   
-          } match
-            case Nil  => pass[Result]
-            case errs => errs.asErrors(())
-
     protected def typeCheck(tree: Node[Expr, Type]): Result[Node[Expr, Type]] =
-      for
-       _ <- checks.schemas(tree)
-      yield tree.transform.pre {
+      tree.transform.preM {
         case Node.CreateTable(t @ Node.Table(_, tpe), None) =>
           tpe match
-            case '[a] =>
-              val specs = require.validSchema[a].forAST
-              Node.CreateTable(t, Some(specs))
+            case '[a] => validateSchema[a].map(s => Node.CreateTable(t, Some(s.forAST)))
       }
 
     protected def toDBIO[A](
