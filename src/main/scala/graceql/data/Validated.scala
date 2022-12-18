@@ -70,15 +70,9 @@ object Validated:
         case Success(value) => Valid(value)
     
     inline def successfulEval[A](run: => A): Validated[Throwable, A] = fromTry(Try(run))
-        
-
-    inline def pass[E]: Validated[E, Unit] = Valid(())
 
     extension [E](e: E)
         def err[A]: Validated[E, A] = Invalid(e)
-
-    extension [A](a: A)
-        def asValid[E]: Validated[E, A] = Valid(a)
 
     extension [E](es: Seq[E])
         def asErrors[A](ifEmpty: A): Validated[E, A] = es match

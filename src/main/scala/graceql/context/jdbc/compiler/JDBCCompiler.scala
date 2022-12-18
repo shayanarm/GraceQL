@@ -3,6 +3,7 @@ package graceql.context.jdbc.compiler
 import scala.quoted.*
 import graceql.core.*
 import graceql.context.jdbc.*
+import graceql.data.Applicative.*
 import graceql.quoted.CompileOps
 import scala.util.Try
 
@@ -114,9 +115,9 @@ trait VendorTreeCompiler[V]:
           .foldLeft[List[String]](Nil) { (msgs, trep) => 
               trep.asType match 
                 case '[a] => 
-                  validateSchema[a].errors.listString(s"Error validating schema for type `${Type.show[a]}`").fold(Nil)(_ :: Nil) ++ msgs   
+                  validateSchema[a].errors.listString(s"Error validating schema for type `${Type.show[a]}`").toList ++ msgs   
           } match
-            case Nil  => pass
+            case Nil  => pass[Result]
             case errs => errs.asErrors(())
 
     protected def typeCheck(tree: Node[Expr, Type]): Result[Node[Expr, Type]] =

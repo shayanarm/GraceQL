@@ -3,6 +3,7 @@ package graceql.core
 import scala.quoted.Quotes
 import graceql.data.Validated
 import scala.quoted.*
+import graceql.data.Applicative.pure
 
 trait CompilationFramework(using val q: Quotes) {
     import q.reflect.*
@@ -43,11 +44,7 @@ trait CompilationFramework(using val q: Quotes) {
             case i: Invalid[_, _] => throw GraceException(i.errors.listString(msg).get)
 
         def instance[T](using Type[T]): Expr[T] =
-        require(
-            Expr
-            .summon[T]
-            .toValid(s"Could not obtain an instance for ${Type.show[T]}")
-        )("Type Class instance not found")
+        require(summonValid[T])("Type Class instance not found")
 
     val require: Requirements
 
@@ -67,8 +64,5 @@ trait CompilationFramework(using val q: Quotes) {
         pipe(e.asTerm).asExprOf[A]
 
     def summonValid[T](using Type[T]): Result[Expr[T]] =
-        Expr.summon[T] match
-            case Some(enc) => enc.asValid
-            case None =>
-                s"Failed to obtain an instances of ${Type.show[T]}".err
+        Expr.summon[T].toValid(s"Failed to obtain an instances for ${Type.show[T]}")
 }

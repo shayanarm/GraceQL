@@ -7,6 +7,7 @@ import graceql.context.jdbc.compiler.*
 import graceql.quoted.CompileOps
 import graceql.syntax.*
 import graceql.data.{Validated, ~}
+import graceql.data.Applicative.*
 
 trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramework {
   self =>
@@ -35,7 +36,7 @@ trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramewor
         for
           enc <- sqlEncoding[A]
           trep: TypeRepr <- enc match
-            case '{ $row: SQLRow[a] } => TypeRepr.of[a].asValid
+            case '{ $row: SQLRow[a] } => TypeRepr.of[a].pure[Result]
             case _ =>
               s"Target type must derive ${TypeRepr.of[SQLRow].typeSymbol.name} to be qualified as a table.".err
         yield enc
@@ -46,7 +47,7 @@ trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramewor
           schema(tname, uniques*) = sch
           _ ~ fieldSpecs <- {
             val nameCheck =
-              if !tname.isBlank then pass
+              if !tname.isBlank then pass[Result]
               else "Schema name cannot be blank".err
             val fs = FieldSpec.allOf[A]
             nameCheck ~ fs
@@ -61,7 +62,7 @@ trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramewor
           _ <- fieldSpecs match
             case Nil =>
               "The type designated as a table must be a `case class` with at least one field.".err
-            case _ => pass
+            case _ => pass[Result]
         yield Schema[A](tname, compUnique, fieldSpecs)
 
       v1 ~ v2 ^^ { case (_, s) => s }
@@ -105,7 +106,7 @@ trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramewor
                 _ <- enc match
                   case '{ $e: SQLRow[a] } =>
                     s"Field ${s.name} cannot derive from ${TypeRepr.of[SQLRow].typeSymbol.name}.".err
-                  case _ => pass
+                  case _ => pass[Result]
               yield enc
 
             val v2 =
@@ -132,14 +133,14 @@ trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramewor
             if fs.sqlName.isBlank
             then
               s"Provided SQL column name for the case field `${fs.name}` cannot be blank".err
-            else pass
+            else pass[Result]
           val modsCheck = fs.mods.collect {
             case fk(tpe: Type[_], field, onDel) =>
               val v1 = (fs.tpe, onDel) match
-                case ('[Option[a]], OnDelete.SetNull) => pass
+                case ('[Option[a]], OnDelete.SetNull) => pass[Result]
                 case (_, OnDelete.SetNull) =>
                   s"Field `${fs.name}` is not nullable; `OnDelete.SetNull` can only be specified for nullable columns".err
-                case _ => pass
+                case _ => pass[Result]
               val v2 = tpe match
                 case '[a] =>
                   TypeRepr
@@ -150,7 +151,7 @@ trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramewor
                     case Some(symb) =>
                       TypeRepr.of[a].memberType(symb) match
                         case reftrep if reftrep.no =:= fs.tpe.typeRepr.no =>
-                          pass
+                          pass[Result]
                         case reftrep =>
                           (s"The Non-Option type of foreign key field `${fs.name}: ${Type
                               .show(using fs.tpe.no)}` does not match that " +
@@ -268,7 +269,7 @@ trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramewor
       symb: Symbol
   )(using Type[T], FromExpr[T]): Result[Option[T]] =
     for
-      opt <- symb.getAnnotation(TypeRepr.of[T].typeSymbol).asValid
+      opt <- symb.getAnnotation(TypeRepr.of[T].typeSymbol).pure[Result]
       v <- opt.fold(Valid(None)) { term =>
         Expr
           .unapply(term.asExprOf[T])

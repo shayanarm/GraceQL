@@ -19,6 +19,15 @@ trait Applicative[M[_]] extends Functor[M]:
     def map[B](f: A => B): M[B] =
       ma <*> f.pure
 
+private trait ControlMethods:
+  extension [A](a: A)
+    inline def pure[M[_]](using ap: Applicative[M]): M[A] = ap.pure(a)
+    inline def lift[M[_]](using ap: Applicative[M]): M[A] = a.pure
+
+  inline def pass[M[_]](using ap: Applicative[M]): M[Unit] = ().pure
+
+object Applicative extends ControlMethods
+
 trait Monad[M[_]] extends Applicative[M]:
   extension [A](ma: M[A])
 
@@ -29,6 +38,8 @@ trait Monad[M[_]] extends Applicative[M]:
     inline def bind[B](f: A => M[B]): M[B] = flatMap(f)
     def ap[B](mf: M[A => B]): M[B] = flatMap(a => mf.flatMap(f => f(a).pure))
 
+object Monad extends ControlMethods
+
 trait MonadPlus[M[_]] extends Monad[M]:
   extension [A](ma: M[A])
 
@@ -38,6 +49,8 @@ trait MonadPlus[M[_]] extends Monad[M]:
 
     inline def ++(other: M[A]): M[A] = concat(other)
 
+object MonadPlus extends ControlMethods
+
 trait MonadZero[M[_]] extends Monad[M]:
   extension [A](ma: M[A])
 
@@ -45,11 +58,13 @@ trait MonadZero[M[_]] extends Monad[M]:
 
     def withFilter(pred: A => Boolean): scala.collection.WithFilter[A, M]
 
+object MonadZero extends ControlMethods
+
 trait MonadError[M[_]] extends Monad[M]:
   def raiseError[A](e: Throwable): M[A]
   extension [A](ma: M[A]) def recoverWith(f: Throwable => M[A]): M[A]
 
-object MonadError:
+object MonadError extends ControlMethods:
   given futureME(using ec: ExecutionContext): MonadError[Future] with
     def raiseError[A](e: Throwable): Future[A] = Future.failed(e)
     extension [A](a: A) @`inline` def pure: Future[A] = Future.successful(a)
@@ -59,7 +74,7 @@ object MonadError:
         case t => f(t)
       }
   given tryME: MonadError[Try] with
-    def raiseError[A](e: Throwable): Try[A] = Try {throw e }
+    def raiseError[A](e: Throwable): Try[A] = Try { throw e }
     extension [A](a: A) @`inline` def pure: Try[A] = Try(a)
     extension [A](ma: Try[A])
       def flatMap[B](f: A => Try[B]): Try[B] = ma.flatMap(f)
@@ -72,16 +87,19 @@ object MonadError:
     extension [A](a: A) @`inline` def pure: Option[A] = Some(a)
     extension [A](ma: Option[A])
       def flatMap[B](f: A => Option[B]): Option[B] = ma.flatMap(f)
-      def recoverWith(f: Throwable => Option[A]): Option[A] = 
-        Try{ma.get}.fold(f,Some(_))      
+      def recoverWith(f: Throwable => Option[A]): Option[A] =
+        Try { ma.get }.fold(f, Some(_))
 
   given eitherME: MonadError[[x] =>> Either[Throwable, x]] with
-      def raiseError[A](e: Throwable): Either[Throwable, A] = Left(e)
-      extension [A](a: A) @`inline` def pure: Either[Throwable, A] = Right(a)
-      extension [A](ma: Either[Throwable, A])
-        def flatMap[B](f: A => Either[Throwable, B]): Either[Throwable, B] = ma.flatMap(f)
-        def recoverWith(f: Throwable => Either[Throwable, A]): Either[Throwable, A] = 
-          ma.left.flatMap[Throwable,A](f)
+    def raiseError[A](e: Throwable): Either[Throwable, A] = Left(e)
+    extension [A](a: A) @`inline` def pure: Either[Throwable, A] = Right(a)
+    extension [A](ma: Either[Throwable, A])
+      def flatMap[B](f: A => Either[Throwable, B]): Either[Throwable, B] =
+        ma.flatMap(f)
+      def recoverWith(
+          f: Throwable => Either[Throwable, A]
+      ): Either[Throwable, A] =
+        ma.left.flatMap[Throwable, A](f)
 
 trait RunLifted[M[_]]:
   def apply[A](a: () => A): M[A]
@@ -89,7 +107,7 @@ trait RunLifted[M[_]]:
 object RunLifted:
 
   given identityRun: RunLifted[[x] =>> x] with
-    
+
     def apply[A](a: () => A): A = a()
 
   given runFuture[A](using

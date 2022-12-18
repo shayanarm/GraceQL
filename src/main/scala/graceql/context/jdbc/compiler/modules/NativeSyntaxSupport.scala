@@ -8,6 +8,7 @@ import graceql.quoted.CompileOps
 import scala.annotation.targetName
 import scala.util.Failure
 import scala.util.Success
+import graceql.data.Applicative.pure
 
 class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
   import graceql.data.Validated
@@ -25,14 +26,14 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
 
     {
       case '{ $i: t } if ctx.isRegisteredIdent(i.asTerm) =>
-        Node.Ref(ctx.refMap(i.asTerm)).asValid
+        Node.Ref(ctx.refMap(i.asTerm)).pure
       case '{ $a: t } if ctx.literalEncodable(a) =>
         a match
-          case '{$c: Class[t]} => Node.TypeLit(Type.of[t]).asValid
+          case '{$c: Class[t]} => Node.TypeLit(Type.of[t]).pure
           case '{ $v: graceql.context.jdbc.Table[V, a] } => 
             tableName[a].map(n => Node.Table[Expr, Type, a](Expr(n), Type.of[a]))            
           case _ =>
-            Node.Literal[Expr, Type, t](a).asValid
+            Node.Literal[Expr, Type, t](a).pure
       // Multiple statements Support      
       case '{$stmt: a; $expr: b} => 
         for
@@ -77,5 +78,5 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
         StringContext(parts*)
     Node.parse(sc)(args) match
       case Failure(exception) => s"SQL Tree parse error: ${exception.getMessage()}".err
-      case Success(value) => value.asValid
+      case Success(value) => value.pure
     
