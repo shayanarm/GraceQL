@@ -8,7 +8,7 @@ import graceql.data.Applicative.*
 import graceql.quoted.CompileOps
 import scala.util.Try
 
-type JDBCCompilationFramework = JDBCSchemaChecks
+type JDBCCompilationFramework = JDBCSchemaValidation
 
 trait VendorTreeCompiler[V]:
   self =>

@@ -8,7 +8,7 @@ import graceql.quoted.CompileOps
 import graceql.syntax.*
 import graceql.data.{Validated, ~}
 
-trait JDBCSchemaChecks(using override val q: Quotes) extends CompilationFramework {
+trait JDBCSchemaValidation(using override val q: Quotes) extends CompilationFramework {
   self =>
   import q.reflect.*
   import Validated.*
