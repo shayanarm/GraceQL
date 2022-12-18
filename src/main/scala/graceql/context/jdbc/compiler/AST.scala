@@ -155,7 +155,7 @@ enum Node[L[_], T[_]]:
   case CreateTable[L[_], T[_]](table: Node[L, T], specs: Option[List[CreateSpec[L,T]]]) extends Node[L, T]
   
 
-  private def trans[M[_]](order: Node.Traversal)(f: PartialFunction[Node[L, T], M[Node[L, T]]])(using m: Monad[M]): M[Node[L, T]] =
+  private def trans[M[_]](ord: Node.Traversal)(f: PartialFunction[Node[L, T], M[Node[L, T]]])(using m: Monad[M]): M[Node[L, T]] =
     val g = f.orElse { case t => m.pure(t) }
     val k: Node[L, T] => M[Node[L, T]] = node => node match
       case Literal(_) => node.pure[M]
@@ -170,47 +170,47 @@ enum Node[L[_], T[_]]:
             offset,
             limit
           ) =>
-            columns.trans[M](order)(f)
-              ~ from.trans[M](order)(f)
+            columns.trans[M](ord)(f)
+              ~ from.trans[M](ord)(f)
               ~ joins.traverse { case (jt, s, o) =>
-                s.trans[M](order)(f).zip(o.trans[M](order)(f)).map((a,b) => (jt, a, b))
+                s.trans[M](ord)(f).zip(o.trans[M](ord)(f)).map((a,b) => (jt, a, b))
               }
-              ~ where.traverse(_.trans[M](order)(f))
+              ~ where.traverse(_.trans[M](ord)(f))
               ~ groupBy.traverse { case (es, h) =>
-                es.trans[M](order)(f).zip(h.traverse(_.trans[M](order)(f)))
+                es.trans[M](ord)(f).zip(h.traverse(_.trans[M](ord)(f)))
               }
-              ~ orderBy.traverse { case (t, o) => t.trans[M](order)(f).map((_, o)) }
-              ~ offset.traverse(_.trans[M](order)(f))
-              ~ limit.traverse(_.trans[M](order)(f))
+              ~ orderBy.traverse { case (t, o) => t.trans[M](ord)(f).map((_, o)) }
+              ~ offset.traverse(_.trans[M](ord)(f))
+              ~ limit.traverse(_.trans[M](ord)(f))
               ^^ { case a ~ b ~ c ~ d ~ e ~ f ~ g ~ h =>
                 Select(distinct, a, b, c, d, e, f, g, h)
               }
       case Star()          => node.pure[M]
       case Column(_)       => node.pure[M]
-      case Tuple(elems)    => elems.traverse(_.trans[M](order)(f)).map(Tuple(_))
+      case Tuple(elems)    => elems.traverse(_.trans[M](ord)(f)).map(Tuple(_))
       case Table(_, _)     => node.pure[M]
       case Values(_)       => node.pure[M]
       case Dual()          => node.pure[M]
-      case As(t, n)        => t.trans[M](order)(f).map(As(_, n))
+      case As(t, n)        => t.trans[M](ord)(f).map(As(_, n))
       case Ref(_)          => node.pure[M]
-      case SelectCol(t, c) => t.trans[M](order)(f) ~ c.trans[M](order)(f) ^^ (SelectCol(_,_))
+      case SelectCol(t, c) => t.trans[M](ord)(f) ~ c.trans[M](ord)(f) ^^ (SelectCol(_,_))
       case FunApp(n, args, tpe) =>
-        args.traverse(_.trans[M](order)(f)).map(FunApp(n, _, tpe))
+        args.traverse(_.trans[M](ord)(f)).map(FunApp(n, _, tpe))
       case TypeLit(_)      => node.pure[M]
-      case Cast(t, tpe)    => t.trans[M](order)(f).map(Cast(_, tpe))
-      case TypeAnn(t, tpe) => t.trans[M](order)(f).map(TypeAnn(_, tpe))
+      case Cast(t, tpe)    => t.trans[M](ord)(f).map(Cast(_, tpe))
+      case TypeAnn(t, tpe) => t.trans[M](ord)(f).map(TypeAnn(_, tpe))
       case Null()          => node.pure[M]
       case Any(c, o, s) =>
-        c.trans[M](order)(f) ~ s.trans[M](order)(f) ^^ (Any(_, o ,_))
+        c.trans[M](ord)(f) ~ s.trans[M](ord)(f) ^^ (Any(_, o ,_))
       case All(c, o, s) =>
-        c.trans[M](order)(f) ~ s.trans[M](order)(f) ^^ (All(_, o, _))        
+        c.trans[M](ord)(f) ~ s.trans[M](ord)(f) ^^ (All(_, o, _))        
       case Union(l, r) =>
-        l.trans[M](order)(f) ~ r.trans[M](order)(f) ^^ (Union(_,_))
-      case Block(stmts) => stmts.traverse(_.trans[M](order)(f)).map(Block(_))
-      case DropTable(t) => t.trans[M](order)(f).map(DropTable(_))
-      case CreateTable(t, s) => t.trans[M](order)(f).map(CreateTable(_, s))
+        l.trans[M](ord)(f) ~ r.trans[M](ord)(f) ^^ (Union(_,_))
+      case Block(stmts) => stmts.traverse(_.trans[M](ord)(f)).map(Block(_))
+      case DropTable(t) => t.trans[M](ord)(f).map(DropTable(_))
+      case CreateTable(t, s) => t.trans[M](ord)(f).map(CreateTable(_, s))
 
-    order match
+    ord match
       case Node.Traversal.Pre => g(this).flatMap(k)      
       case Node.Traversal.Post => k(this).flatMap(g)
   
@@ -377,7 +377,7 @@ enum Node[L[_], T[_]]:
       ): Node[L2, T2] = self.both(fl, ft)        
 
 object Node:
-  private enum Traversal:
+  enum Traversal:
     case Pre
     case Post
 

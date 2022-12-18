@@ -28,10 +28,6 @@ enum Validated[E, +A]:
         case Valid(v) => Seq.empty
         case Invalid(h, es) => h +: es
 
-    inline def ~[B](other: Validated[E, B]): Validated[E, A ~ B] = this.zip(other)
-
-    inline def ^^[B](f: A => B) = this.map(f)
-
     def mapError[O](f: E => O): Validated[O, A] =
         this match
             case Invalid(h, t) => Invalid(f(h), t.map(f))
@@ -92,7 +88,7 @@ object Validated:
 
         override def ap[B](mf: Validated[E, A => B]): Validated[E, B] =
             (ma, mf) match 
-                case (Invalid(hl, tl), Invalid(hr, tr)) => Invalid(hl, (tl :+ hr) ++ tr)  
+                case (Invalid(h,t), invr: Invalid[_,_]) => Invalid(h, t ++ invr.errors)  
                 case (Valid(_), inv: Invalid[_, _]) => inv.asInstanceOf[Validated[E, B]]  
                 case (inv: Invalid[_, _], Valid(_)) => inv.asInstanceOf[Validated[E, B]]
                 case (Valid(v), Valid(f)) => Valid(f(v))
