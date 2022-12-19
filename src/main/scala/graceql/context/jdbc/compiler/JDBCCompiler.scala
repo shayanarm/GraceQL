@@ -7,6 +7,7 @@ import graceql.context.jdbc.*
 import graceql.data.Applicative.*
 import graceql.quoted.CompileOps
 import scala.util.Try
+import graceql.data.Kleisli
 
 type JDBCCompilationFramework = JDBCSchemaValidation
 
@@ -97,14 +98,16 @@ trait VendorTreeCompiler[V]:
           i(toNative, nameGen.nextName)(ctx).orElse(c)
         }
 
-      val result = for
-        r1 <- successfulEval(appliedToPlaceHolder[Q, A](expr)).mapError(_.getMessage)
-        r2 <- successfulEval(preprocess[A](r1)).mapError(_.getMessage)
-        r3 <- toNative(Context())(r2)
-        r4 <- typeCheck(r3)
-      yield toDBIO[A](r4)
+      def prep(e: Expr[Q => A]) =
+        successfulEval(preprocess[A].compose(appliedToPlaceHolder[Q, A])(e)).mapError(_.getMessage)
+        
+      val pipe = 
+        Kleisli(prep) #> 
+        toNative(Context()) #> 
+        typeCheck ^^ 
+        toDBIO[A]
 
-      require(result)("Query compilation failed")
+      require(pipe.run(expr))("Query compilation failed")
 
     protected def typeCheck(tree: Node[Expr, Type]): Result[Node[Expr, Type]] =
       tree.transform.preM {

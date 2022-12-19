@@ -16,5 +16,5 @@ package object syntax {
     inline def traverse[G[_]: Applicative, B](f: A => G[B]): G[F[B]] = summon[Traverse[F]].traverse(f)(fa)
   
   extension [F[_]: Traverse, G[_]: Applicative, A](fa: F[G[A]])
-    inline def sequence: G[F[A]] = summon[Traverse[F]].sequence(fa)  
+    inline def sequence: G[F[A]] = summon[Traverse[F]].sequence(fa)
 }
