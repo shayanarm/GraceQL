@@ -10,7 +10,7 @@ package object syntax {
     
     inline def lift[M[_]](using app: Applicative[M]): M[A] = a.pure
 
-  inline def pass[M[_]](using app: Applicative[M]): M[Unit] = ().pure
+  inline def pass[M[_]](using app: Applicative[M]): M[Unit] = app.pass
 
   extension [F[_]: Traverse, A](fa: F[A])
     inline def traverse[G[_]: Applicative, B](f: A => G[B]): G[F[B]] = summon[Traverse[F]].traverse(f)(fa)

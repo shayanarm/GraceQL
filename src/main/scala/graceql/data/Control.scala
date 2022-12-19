@@ -20,13 +20,13 @@ trait Applicative[M[_]] extends Functor[M]:
     
     def zip[B](mb: M[B]): M[(A, B)] = ma.ap(mb.map(b => a => (a, b)))
     
-    def ~[B](mb: M[B]): M[(A, B)] = zip(mb)
+    inline def ~[B](mb: M[B]): M[(A, B)] = zip(mb)
     
     inline def <*>[B](f: M[A => B]): M[B] = ap(f)
     def map[B](f: A => B): M[B] =
       ma <*> f.pure
 
-    inline def pass[M[_]](using app: Applicative[M]): M[Unit] = ().pure
+  inline def pass: M[Unit] = ().pure
 
 object Applicative
 
