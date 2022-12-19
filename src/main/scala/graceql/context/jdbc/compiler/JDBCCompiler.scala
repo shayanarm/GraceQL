@@ -102,7 +102,7 @@ trait VendorTreeCompiler[V]:
         successfulEval(preprocess[A].compose(appliedToPlaceHolder[Q, A])(e)).mapError(_.getMessage)
         
       val pipe = 
-        Kleisli(prep) #> 
+        prep.kleisli #> 
         toNative(Context()) #> 
         typeCheck ^^ 
         toDBIO[A]
