@@ -18,7 +18,7 @@ trait VendorTreeCompiler[V]:
       Quotes,
       Type[V],
       Type[S]
-  ) : Delegate[S] = new Delegate[S]
+  ): Delegate[S] = new Delegate[S]
 
   def tryCompile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
@@ -65,7 +65,7 @@ trait VendorTreeCompiler[V]:
       Symbol => _,
       *
     }
-    type Requirements = SchemaRequirements  
+    type Requirements = SchemaRequirements
     val require = new SchemaRequirements {}
 
     type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
@@ -90,22 +90,28 @@ trait VendorTreeCompiler[V]:
         ta: Type[A]
     ): Expr[DBIO[A]] =
 
-      val fallback: PartialFunction[Expr[Any], Result[Node[Expr, Type]]] = { case e =>
+      val fallback: PartialFunction[Expr[Any], Result[Node[Expr, Type]]] = {
+        case e =>
           s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}".err
       }
-      def toNative(ctx: Context): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
+      def toNative(
+          ctx: Context
+      ): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
         partials.foldRight(fallback) { (i, c) =>
           i(toNative, nameGen.nextName)(ctx).orElse(c)
         }
 
       def prep(e: Expr[Q => A]) =
-        successfulEval(preprocess[A].compose(appliedToPlaceHolder[Q, A])(e)).mapError(_.getMessage)
-        
-      val pipe = 
-        prep.kleisli #> 
-        toNative(Context()) #> 
-        typeCheck ^^ 
-        toDBIO[A]
+        successfulEval(
+          preprocess[A].compose(appliedToPlaceHolder[Q, A])(e)
+        )
+          .mapError(_.getMessage)
+
+      val pipe =
+        prep.kleisli #>
+          toNative(Context()) #>
+          typeCheck ^^
+          toDBIO[A]
 
       require(pipe.run(expr))("Query compilation failed")
 
@@ -113,7 +119,8 @@ trait VendorTreeCompiler[V]:
       tree.transform.preM {
         case Node.CreateTable(t @ Node.Table(_, tpe), None) =>
           tpe match
-            case '[a] => validateSchema[a].map(s => Node.CreateTable(t, Some(s.forAST)))
+            case '[a] =>
+              validateSchema[a].map(s => Node.CreateTable(t, Some(s.forAST)))
       }
 
     protected def toDBIO[A](
@@ -128,7 +135,7 @@ trait VendorTreeCompiler[V]:
         case ('[Unit], _: Block[_, _]) =>
           '{ DBIO.Statement(${ binary(tree) }) }.asExprOf[DBIO[A]]
         case (_, Literal(v)) =>
-          '{ DBIO.Pure[A](() => ${v.asExprOf[A]}) }          
+          '{ DBIO.Pure[A](() => ${ v.asExprOf[A] }) }
         case _ =>
           '{ DBIO.Query(${ binary(tree) }, (rs) => ???) }
 
@@ -357,8 +364,8 @@ abstract class CompileModule[V, S[+X] <: Iterable[X]](using
   type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
   given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
 
-  type Requirements = SchemaRequirements  
-  val require = new SchemaRequirements {}    
+  type Requirements = SchemaRequirements
+  val require = new SchemaRequirements {}
 
   def apply(
       recurse: Context => Expr[Any] => Result[Node[Expr, Type]],
