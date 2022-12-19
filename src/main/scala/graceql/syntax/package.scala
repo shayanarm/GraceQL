@@ -19,5 +19,5 @@ package object syntax {
     inline def sequence: G[F[A]] = summon[Traverse[F]].sequence(fa)
 
   extension [M[_]: Monad, A, B](f: A => M[B])
-    def kleisli = Kleisli(f)  
+    inline def kleisli = Kleisli(f)  
 }

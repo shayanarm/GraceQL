@@ -10,7 +10,7 @@ object Id:
 
     given Monad[Id] with {
 
-      extension [A](a: A) override def pure: Id[A] = a
+      extension [A](a: A) override inline def pure: Id[A] = a
 
-      extension [A](ma: Id[A]) override def flatMap[B](f: A => Id[B]): Id[B] = f(ma)
+      extension [A](ma: Id[A]) override inline def flatMap[B](f: A => Id[B]): Id[B] = f(ma)
     }
