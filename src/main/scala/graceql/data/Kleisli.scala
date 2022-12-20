@@ -22,5 +22,6 @@ object Kleisli:
             def pure: Kleisli[M, A, B] = Kleisli(_ => m.pure(b))
 
         extension [B](ma: Kleisli[M, A, B])
-            def flatMap[C](f: B => Kleisli[M, A, C]): Kleisli[M, A, C] = ???
+            def flatMap[C](f: B => Kleisli[M, A, C]): Kleisli[M, A, C] = 
+                Kleisli(a => ma.run(a).flatMap(b => f(b).run(a)))
     }
