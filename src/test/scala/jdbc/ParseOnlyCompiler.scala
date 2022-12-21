@@ -7,7 +7,7 @@ import graceql.core.*
 import graceql.context.jdbc.*
 import scala.annotation.targetName
 
-object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
+object ParseOnlyCompiler extends VendorTreeCompiler[GenSql]:
   import Node.*
   protected def binary(recurse: Node[Expr, Type] => Expr[String])(using
       Quotes
@@ -23,7 +23,7 @@ object ParseOnlyCompiler extends VendorTreeCompiler[GenSQL]:
 
   override def delegate[S[+X] <: Iterable[X]](using
       Quotes,
-      Type[GenSQL],
+      Type[GenSql],
       Type[S]
   ): Delegate[S] =
     new Delegate[S] {

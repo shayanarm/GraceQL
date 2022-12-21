@@ -16,10 +16,10 @@ import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
 
-class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
+class GenSqlCodecSpec extends AnyFlatSpec with should.Matchers {
 
   @schema("users")
-  case class User(id: Int, name: String) derives SQLRow
+  case class User(id: Int, name: String) derives SqlRow
 
   @schema(name="posts", compositeUniqueKey="userId", "content")
   case class Post(
@@ -27,20 +27,20 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
     @name("user_id") @fk(classOf[User], "id", OnDelete.Cascade) userId: Int,   
     @index(Order.Desc) content: String,
     @index(Order.Asc) priority: Option[Int] = Some(0)
-  ) derives SQLRow
+  ) derives SqlRow
 
 
-  val users: Table[GenSQL, User] = Table[GenSQL, User]()
-  val posts: Table[GenSQL, Post] = Table[GenSQL, Post]()
+  val users: Table[GenSql, User] = Table[GenSql, User]()
+  val posts: Table[GenSql, Post] = Table[GenSql, Post]()
 
   inline def parseAssert[A](
-      inline src: Queryable[[x] =>> Table[GenSQL, x], Iterable, DBIO] ?=> A
+      inline src: Queryable[[x] =>> Table[GenSql, x], Iterable, DBIO] ?=> A
   )(expected: String) =
-    val exe = query[[x] =>> Table[GenSQL, x], Iterable](src)
+    val exe = query[[x] =>> Table[GenSql, x], Iterable](src)
     assert(exe.compiled.executableStmt.get == expected)
 
   s"""
-  Using raw SQL, the JDBC context
+  Using raw Sql, the JDBC context
   """ should "parse a select query from a single table" in {
     parseAssert {
       native"SELECT u.* FROM ${users.lift} AS u".unlift
@@ -138,7 +138,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
   }
 
   it should "have no leftovers after parsing" in {
-        sql[GenSQL, Iterable].tried {
+        sql[GenSql, Iterable].tried {
           native"select * from ${users.lift} as u leftover".unlift
         }.isFailure shouldBe true
   }
@@ -184,7 +184,7 @@ class GenSQLCodecSpec extends AnyFlatSpec with should.Matchers {
       "myfunc(1)"
     }
 
-      sql[GenSQL, Iterable].tried {
+      sql[GenSql, Iterable].tried {
         native"as(${1.lift})".unlift
       }.isFailure shouldBe true
   }

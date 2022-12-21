@@ -2,10 +2,10 @@ package jdbc.mysql
 
 import graceql.context.jdbc.mysql.*
 import graceql.context.jdbc.*
-import jdbc.JDBCSpec
+import jdbc.JdbcSpec
 
-class MySQLSpec
-    extends JDBCSpec[MySQL, Seq](
+class MySqlSpec
+    extends JdbcSpec[MySql, Seq](
       "MySQL",
       "jdbc:mysql://mysql:3306/",
       "testdb",

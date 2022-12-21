@@ -7,6 +7,6 @@ package object jdbc {
   export jdbc.compiler.Order
   
   transparent inline def sql[V, S[+X] <: Iterable[X]]
-      : context.CallProxy[JDBCQueryContext[V, S]] =
-    context[JDBCQueryContext[V, S]]
+      : context.CallProxy[JdbcQueryContext[V, S]] =
+    context[JdbcQueryContext[V, S]]
 }

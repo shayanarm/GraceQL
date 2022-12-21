@@ -1,10 +1,10 @@
 package jdbc.postgres
 import graceql.context.jdbc.postgres.*
 import graceql.context.jdbc.*
-import jdbc.JDBCSpec
+import jdbc.JdbcSpec
 
-class PostgreSQLSpec
-    extends JDBCSpec[PostgreSQL, Seq](
+class PostgreSqlSpec
+    extends JdbcSpec[PostgreSql, Seq](
       "PostgreSQL",
       "jdbc:postgresql://postgres:5432/",
       "testdb",

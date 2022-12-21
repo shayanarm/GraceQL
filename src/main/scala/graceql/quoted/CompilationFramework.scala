@@ -1,7 +1,8 @@
-package graceql.core
+package graceql.quoted
 
 import scala.quoted.Quotes
 import graceql.data.Validated
+import graceql.core.*
 import scala.quoted.*
 import graceql.syntax.*
 

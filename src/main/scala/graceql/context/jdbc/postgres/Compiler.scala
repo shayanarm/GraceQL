@@ -5,7 +5,7 @@ import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
 import scala.quoted.*
 
-object Compiler extends VendorTreeCompiler[PostgreSQL]:
+object Compiler extends VendorTreeCompiler[PostgreSql]:
 
   import Node.*
 
@@ -86,7 +86,7 @@ object Compiler extends VendorTreeCompiler[PostgreSQL]:
 
   override def delegate[S[+X] <: Iterable[X]](using
       Quotes,
-      Type[PostgreSQL],
+      Type[PostgreSql],
       Type[S]
   ): Delegate[S] =
     new Delegate[S] {

@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
 import scala.jdk.CollectionConverters.*
 import scala.util.Success
 
-trait JDBCSpec[V, S[+X] <: Iterable[X]](
+trait JdbcSpec[V, S[+X] <: Iterable[X]](
     val vendor: String,
     val url: String,
     val database: String,
@@ -30,7 +30,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
 ) extends AnyFlatSpec
     with should.Matchers
     with BeforeAndAfter {
-  import JDBCSpec.*
+  import JdbcSpec.*
   
   DriverManager.registerDriver(driver)    
   val dbUrl = {
@@ -69,7 +69,7 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
       Try {globalConn.prepareStatement(s"CREATE DATABASE $database").execute()}
       globalConn.close()
   
-  inline def expandCommons()(using ctx: JDBCQueryContext[V, S]) =
+  inline def expandCommons()(using ctx: JdbcQueryContext[V, S]) =
     s"""
     The high-level JDBC context for $vendor on DDL commands
     """ should "create and drop a simple table (without annotations)" in withConnection {
@@ -190,13 +190,13 @@ trait JDBCSpec[V, S[+X] <: Iterable[X]](
 /**
  * To prevent some bizarre compiler error, classes are defined outside the test suite.
 */
-object JDBCSpec:
+object JdbcSpec:
 
   @schema("record1s")
-  case class Record1(field1: Int, field2: String) derives SQLRow
+  case class Record1(field1: Int, field2: String) derives SqlRow
 
   @schema("record2s")
-  case class Record2(@unique @index field1: Int, @unique field2: String) derives SQLRow
+  case class Record2(@unique @index field1: Int, @unique field2: String) derives SqlRow
 
   @schema("record3s")
   case class Record3(
@@ -206,7 +206,7 @@ object JDBCSpec:
       ) field2: Int,
       @name("my_field_3") field3: String,
       @index(Order.Asc) field4: Option[Int] = Some(0)
-  ) derives SQLRow
+  ) derives SqlRow
 
   @schema("record4s")
   case class Record4(
@@ -215,68 +215,68 @@ object JDBCSpec:
       @fk(classOf[Record2], "field1", OnDelete.SetNull) field3: Option[
         Int
       ]
-  ) derives SQLRow
+  ) derives SqlRow
 
   @schema("record5s")
   case class Record5(
       @fk(classOf[Record2], "field1", OnDelete.SetNull) field1: Int
-  ) derives SQLRow
+  ) derives SqlRow
 
   @schema("record6s")
   case class Record6(
       @fk(classOf[Record2], "invalid") field1: Int
-  ) derives SQLRow
+  ) derives SqlRow
   
   @schema("record7s")
   case class Record7(
       @fk(classOf[Record2], "field1") field1: String
-  ) derives SQLRow  
+  ) derives SqlRow  
 
   @schema("record8s")
   case class Record8(
       @pk @unique @index @fk(classOf[Record2], "field1") field1: Int
-  ) derives SQLRow  
+  ) derives SqlRow  
 
   @schema("record9s")
   case class Record9(
       @pk @index @unique @fk(classOf[Record2], "field2") field1: String
-  ) derives SQLRow  
+  ) derives SqlRow  
 
   @schema("")
   case class Record10(
       field1: String
-  ) derives SQLRow  
+  ) derives SqlRow  
 
   case class Record11(
       field1: String
-  ) derives SQLRow  
+  ) derives SqlRow  
 
   @schema("record12s")
   case class Record12(
       @name(" ") field1: String
-  ) derives SQLRow    
+  ) derives SqlRow    
 
   @schema("record13s")
   case class Record13(
       @pk @name("custom") field1: Int
-  ) derives SQLRow      
+  ) derives SqlRow      
 
   @schema("record14s")
   case class Record14(
       @fk(classOf[Record13], "field1") field1: Int
-  ) derives SQLRow
+  ) derives SqlRow
 
   @schema("record15s")
   case class Record15(
       @name("duplicate") field1: Int, @name("duplicate") field2: Int
-  ) derives SQLRow
+  ) derives SqlRow
 
   @schema(name="record16s", compositeUniqueKey= "field1", "field2", "field3")
   case class Record16(
       field1: Int, field2: Int, field3: Int
-  ) derives SQLRow  
+  ) derives SqlRow  
 
   @schema(name="record17s", compositeUniqueKey= "field1", "invalid", "field3")
   case class Record17(
       field1: Int, field2: Int, field3: Int
-  ) derives SQLRow  
+  ) derives SqlRow  

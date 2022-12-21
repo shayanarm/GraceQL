@@ -4,9 +4,9 @@ import graceql.core.*
 import graceql.context.jdbc.*
 import scala.util.Try
 
-final type PostgreSQL
-object PostgreSQL:
-  given postgresQueryContext[S[+X] <: Iterable[X]]: JDBCQueryContext[PostgreSQL, S]
+final type PostgreSql
+object PostgreSql:
+  given postgresQueryContext[S[+X] <: Iterable[X]]: JdbcQueryContext[PostgreSql, S]
     with
     inline def compile[A](inline query: Capabilities ?=> A): Native[A] =
       ${ Compiler.compile[S,A]('query) }

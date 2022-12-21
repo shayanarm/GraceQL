@@ -77,6 +77,6 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
       case '{ new StringContext(${ Varargs(Exprs(parts)) }: _*) } =>
         StringContext(parts*)
     Node.parse(sc)(args) match
-      case Failure(exception) => s"SQL Tree parse error: ${exception.getMessage()}".err
+      case Failure(exception) => s"Sql Tree parse error: ${exception.getMessage()}".err
       case Success(value) => value.pure
     

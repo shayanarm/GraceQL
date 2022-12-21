@@ -7,14 +7,14 @@ import scala.quoted.*
 import graceql.data.Validated
 import graceql.data.Validated.*
 
-object Compiler extends VendorTreeCompiler[MySQL]:
+object Compiler extends VendorTreeCompiler[MySql]:
   import Node.*
 
   protected def binary(
       recurse: Node[Expr, Type] => Expr[String]
   )(using Quotes): PartialFunction[Node[Expr, Type], Expr[String]] = {
     case CreateTable(table, Some(specs)) =>
-      // MySQL requires key lengths on BLOB/TEXT columns
+      // MySql requires key lengths on BLOB/TEXT columns
       def keyName(key: String): String =
         val tpe = specs.collect {
           case CreateSpec.ColDef(colName, tpe, mods) if colName == key => tpe
@@ -99,7 +99,7 @@ object Compiler extends VendorTreeCompiler[MySQL]:
 
   override def delegate[S[+X] <: Iterable[X]](using
       Quotes,
-      Type[MySQL],
+      Type[MySql],
       Type[S]
   ): Delegate[S] =
     new Delegate[S] {
