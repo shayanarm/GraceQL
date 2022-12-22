@@ -6,12 +6,15 @@ enum Ior[+L, +R]:
   case Both[L, R](left: L, right: R) extends Ior[L, R]
 
   
-  def map[R2](f: R => R2): Ior[L, R2] = this match
-    case Ior.Left(_)    => this.asInstanceOf[Ior[L, R2]]
-    case Ior.Right(r)   => Right(f(r))
-    case Ior.Both(l, r) => Both(l, f(r))
-
-  def flatMap[L1 >: L, R2](f: R => Ior[L1, R2]): Ior[L1, R2] = this match
-    case Ior.Left(_)    => this.asInstanceOf[Ior[L1, R2]]
-    case Ior.Right(r)   => f(r)
-    case Ior.Both(l, r) => f(r)  
+object Ior:
+  given monad[L]: Monad[[x] =>> Ior[L, x]] with
+    extension [R](r: R) 
+      def pure: Ior[L, R] = Right(r)
+      
+    extension [R1](ma: Ior[L, R1]) 
+      def flatMap[R2](f: R1 => Ior[L, R2]): Ior[L, R2] = 
+        ma match
+          case l: Left[_] => l.asInstanceOf[Ior[L, R2]]
+          case Right(r) => f(r)
+          case Both(l,r) => f(r)
+    
