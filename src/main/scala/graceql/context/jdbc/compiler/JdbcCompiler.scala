@@ -8,6 +8,7 @@ import graceql.data.Applicative.*
 import graceql.quoted.CompileOps
 import scala.util.Try
 import graceql.data.Kleisli
+import graceql.quoted.Compiled
 
 type JdbcCompilationFramework = JdbcSchemaValidation
 
@@ -20,16 +21,6 @@ trait VendorTreeCompiler[V]:
       Type[S]
   ): Delegate[S] = new Delegate[S]
 
-  def tryCompile[S[+X] <: Iterable[X], A](
-      e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
-  )(using
-      q: Quotes,
-      ta: Type[A],
-      ts: Type[S],
-      tv: Type[V]
-  ): Expr[Try[DBIO[A]]] =
-    CompileOps.tryCompile(compile[S, A](e))
-
   def compile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
   )(using
@@ -37,11 +28,13 @@ trait VendorTreeCompiler[V]:
       ta: Type[A],
       ts: Type[S],
       tv: Type[V]
-  ): Expr[DBIO[A]] =
+  ): Expr[Compiled[DBIO[A]]] =
     import q.reflect.{Statement => _, *}
-    e match
-      case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
-        delegate[S].compile[A](body)
+    Compiled.`catch` {
+      e match
+        case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
+          delegate[S].compile[A](body)
+    }
 
   protected def binary(recurse: Node[Expr, Type] => Expr[String])(using
       Quotes
@@ -319,7 +312,7 @@ trait VendorTreeCompiler[V]:
                     .mkString(", ") + ")"
                 }
           case Cast(n, tpe) =>
-            '{ "CAst(" + ${ binary(n) } + " AS " + ${ typeString(tpe) } + ")" }
+            '{ "CAST(" + ${ binary(n) } + " AS " + ${ typeString(tpe) } + ")" }
         }(tree)
 
 class Context(

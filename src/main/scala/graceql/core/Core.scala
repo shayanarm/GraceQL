@@ -1,13 +1,13 @@
 package graceql.core
 
 import graceql.data.*
-import scala.quoted.*
 import scala.annotation.targetName
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import scala.compiletime.summonInline
 import scala.concurrent.Promise
 import scala.util.Try
+import graceql.quoted.Compiled
 
 class GraceException(
     val message: Option[String] = None,
@@ -108,14 +108,15 @@ trait Context[R[_]]:
   protected def exe[A](compiled: Native[A]): Exe[A]
 
   inline def apply[A](inline query: Capabilities ?=> A): Exe[A] =
-    exe(compile(query))
+    exe(compileThrow(query))
 
   inline def tried[A](inline query: Capabilities ?=> A): Try[Exe[A]] =
-    tryCompile[A](query).map(exe)
+    compile[A](query).map(exe)
 
-  inline def compile[A](inline query: Capabilities ?=> A): Native[A]
+  inline def compileThrow[A](inline query: Capabilities ?=> A): Native[A] =
+    ${Compiled.unlift('{compile[A](query)})}
   
-  inline def tryCompile[A](inline query: Capabilities ?=> A): Try[Native[A]]
+  inline def compile[A](inline query: Capabilities ?=> A): Compiled[Native[A]]
 
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>
@@ -204,7 +205,7 @@ object Transaction:
             case true => tr
             case false =>
               throw new NoSuchElementException(
-                "Transaction.withFilter predicate is not satisfied. Also, this method should not be called"
+                "`Transaction.withFilter` predicate is not satisfied. Also, this method should not be called"
               )
     @scala.annotation.nowarn
     final def flatMap[C2, A](
