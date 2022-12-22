@@ -7,7 +7,7 @@ import graceql.context.jdbc.*
 import graceql.quoted.CompileOps
 import scala.util.Try
 import graceql.data.Kleisli
-import graceql.quoted.Compiled
+import graceql.quoted.Tried
 
 type JdbcCompilationFramework = JdbcSchemaValidation
 
@@ -27,9 +27,9 @@ trait VendorTreeCompiler[V]:
       ta: Type[A],
       ts: Type[S],
       tv: Type[V]
-  ): Expr[Compiled[DBIO[A]]] =
+  ): Expr[Tried[DBIO[A]]] =
     import q.reflect.{Statement => _, *}
-    Compiled.`catch` {
+    Tried.`catch` {
       e match
         case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
           delegate[S].compile[A](body)

@@ -2,7 +2,7 @@ package graceql.context.memory
 
 import scala.quoted.*
 import graceql.core.*
-import graceql.quoted.Compiled
+import graceql.quoted.Tried
 
 object Compiler {
   def compile[R[_], M[_], A](e: Expr[A])(using
@@ -10,9 +10,9 @@ object Compiler {
       tr: Type[R],
       tm: Type[M],
       ta: Type[A]
-  ): Expr[Compiled[() => A]] =
+  ): Expr[Tried[() => A]] =
     import q.reflect.*
-    Compiled.`catch` {
+    Tried.`catch` {
       new TreeTraverser {
         override def traverseTree(tree: Tree)(owner: Symbol): Unit =
           tree match
