@@ -18,12 +18,12 @@ object Tried:
   def get[A](expr: Expr[Tried[A]])(using q: Quotes, ta: Type[A]): Expr[A] =
     import q.reflect.*
     val unlifted = CompileOps.inlineDefs(expr.asTerm).asExpr match
-      case '{ Tried.Success($code: A) }                => Right(code)
-      case '{ new Tried.Success($code: A) }            => Right(code)
-      case '{ Tried.Failure($ex: GraceException) }     => Left(ex)
-      case '{ new Tried.Failure($ex: GraceException) } => Left(ex)
+      case '{ Success($code: A) }                => Right(code)
+      case '{ new Success($code: A) }            => Right(code)
+      case '{ Failure($ex: GraceException) }     => Left(ex)
+      case '{ new Failure($ex: GraceException) } => Left(ex)
       case _ => throw GraceException(
-        s"Expressions of type `Compiled[${Type.show[A]}]` must be constructed using one of its case constructors directly. See `Tried.catch` as an example."
+        s"Expressions of type `Compiled[${Type.show[A]}]` must be constructed using one of its case constructors directly. See `graceql.quoted.catch` as an example."
         )
     unlifted match
       case Right(code) => code
@@ -35,7 +35,7 @@ object Tried:
   def `catch`[A](thunk: => Expr[A])(using q: Quotes, ta: Type[A]): Expr[Tried[A]] = 
     import q.reflect.*
     try   
-      '{Tried.Success($thunk)}
+      '{Success($thunk)}
     catch
       case e =>
         '{Failure(GraceException(${Expr(e.getMessage)}))}
