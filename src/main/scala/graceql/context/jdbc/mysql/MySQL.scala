@@ -9,5 +9,5 @@ final type MySql
 
 object MySql:
   given mysqlQueryContext[S[+X] <: Iterable[X]]: JdbcQueryContext[MySql, S] with
-    inline def compile[A](inline query: Capabilities ?=> A): Compiled[Native[A]] =
+    inline def compile[A](inline query: Api ?=> A): Compiled[Native[A]] =
       ${ Compiler.compile[S,A]('query) }

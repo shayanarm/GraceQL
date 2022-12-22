@@ -14,7 +14,7 @@ case class Kleisli[M[_]: Monad, A, B](run: A => M[B]):
         k <# this
 
 object Kleisli:
-    given conv[M[_] : Monad, A, B]: Conversion[A => M[B], Kleisli[M, A, B]] = Kleisli.apply
+    given convFunc[M[_] : Monad, A, B]: Conversion[A => M[B], Kleisli[M, A, B]] = Kleisli.apply
 
     given km[M[_], A](using m: Monad[M]): Monad[[x] =>> Kleisli[M, A, x]] with {
 
@@ -23,5 +23,5 @@ object Kleisli:
 
         extension [B](ma: Kleisli[M, A, B])
             def flatMap[C](f: B => Kleisli[M, A, C]): Kleisli[M, A, C] = 
-                Kleisli(a => ma.run(a).flatMap(b => f(b).run(a)))
+                Kleisli(a => m.flatMap(ma.run(a))(b => f(b).run(a)))
     }

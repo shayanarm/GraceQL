@@ -2,7 +2,7 @@ import scala.quoted.*
 import graceql.core.*
 
 package object graceql {
-  export graceql.core.Capabilities
+  export graceql.core.Api
   export graceql.core.QueryContext
   export graceql.core.Transaction
   export graceql.core.Transaction.transaction
@@ -10,7 +10,7 @@ package object graceql {
   transparent inline def query[R[_], M[+_]]: context.CallProxy[QueryContext[R, M]] = 
     context[QueryContext[R, M]]
 
-  class FunctionsProxy[N[+_]](using c: Capabilities[N]):
+  class FunctionsProxy[N[+_]](using c: Api[N]):
 
     inline def nullary[A](inline f: N[A]): () => A = 
       () => f.unlift
@@ -23,5 +23,5 @@ package object graceql {
     inline def quarternary[A1, A2, A3, A4, B](inline f: (N[A1], N[A2], N[A3], N[A4]) => N[B]): (A1, A2, A3, A4) => B =
       (a1, a2, a3, a4) => f(a1.lift, a2.lift, a3.lift, a4.lift).unlift
 
-  inline def function[N[+_]](using c: Capabilities[N]) = FunctionsProxy[N]()    
+  inline def function[N[+_]](using c: Api[N]) = FunctionsProxy[N]()    
 }

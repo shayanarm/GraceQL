@@ -35,7 +35,7 @@ class Exe[R[_], N[_], C, A](val compiled: N[A]):
     summonInline[Execute[R, N, C, A, B]].apply(compiled, conn)
   inline def as[G[_]](using C): G[A] =
     apply[G[A]]
-  inline def run(using C): A = as[[x] =>> x]
+  inline def run(using C): A = as[Id].unwrap
   inline def future(using C): Future[A] = as[Future]
   inline def promise(using C): Promise[A] = as[Promise]
   inline def asTry(using C): Try[A] = as[Try]
@@ -43,7 +43,7 @@ class Exe[R[_], N[_], C, A](val compiled: N[A]):
   inline def either(using C): Either[Throwable, A] =
     as[[x] =>> Either[Throwable, x]]
 
-trait Capabilities[N[+_]]:
+trait Api[N[+_]]:
   extension [A](bin: N[A])
     def typed[B]: N[B]
     def unlift: A
@@ -60,7 +60,7 @@ final type Read[R[_], M[_], T] = T match
 
 trait Queryable[R[_], M[_], N[+_]]
     extends Relational[[x] =>> Source[R, M, x]]
-    with Capabilities[N]:
+    with Api[N]:
 
   extension [A](a: A)
     @terminal
@@ -98,7 +98,7 @@ trait Queryable[R[_], M[_], N[+_]]
 trait Context[R[_]]:
   self =>
   type Native[+A]
-  type Capabilities
+  type Api
   type Connection
 
   final type Execute[A, B] = graceql.core.Execute[R, Native, Connection, A, B]
@@ -106,23 +106,23 @@ trait Context[R[_]]:
   type Exe[A] <: graceql.core.Exe[R, Native, Connection, A]
 
   protected def exe[A](compiled: Native[A]): Exe[A]
+  
+  inline def compile[A](inline query: Api ?=> A): Compiled[Native[A]]
 
-  inline def apply[A](inline query: Capabilities ?=> A): Exe[A] =
+  inline def compileThrow[A](inline query: Api ?=> A): Native[A] =
+    ${Compiled.get('{compile[A](query)})}
+
+  inline def apply[A](inline query: Api ?=> A): Exe[A] =
     exe(compileThrow(query))
 
-  inline def tried[A](inline query: Capabilities ?=> A): Try[Exe[A]] =
-    compile[A](query).map(exe)
-
-  inline def compileThrow[A](inline query: Capabilities ?=> A): Native[A] =
-    ${Compiled.get('{compile[A](query)})}
-  
-  inline def compile[A](inline query: Capabilities ?=> A): Compiled[Native[A]]
+  inline def tried[A](inline query: Api ?=> A): Try[Exe[A]] =
+    compile[A](query).map(exe)  
 
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>
 
   final type Queryable = graceql.core.Queryable[R, M, Native]
-  final type Capabilities = Queryable
+  final type Api = Queryable
   final class Exe[A](compiled: Native[A])
       extends graceql.core.Exe[R, Native, Connection, A](compiled):
     type RowType = A match

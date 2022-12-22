@@ -4,7 +4,6 @@ import scala.quoted.*
 import graceql.core.*
 import graceql.syntax.*
 import graceql.context.jdbc.*
-import graceql.data.Applicative.*
 import graceql.quoted.CompileOps
 import scala.util.Try
 import graceql.data.Kleisli
@@ -94,17 +93,17 @@ trait VendorTreeCompiler[V]:
           i(toNative, nameGen.nextName)(ctx).orElse(c)
         }
 
-      def prep(e: Expr[Q => A]) =
+      def prep(e: Expr[Q => A]): Result[Expr[A]] =
         successfulEval(
           preprocess[A].compose(appliedToPlaceHolder[Q, A])(e)
         )
           .mapError(_.getMessage)
 
       val pipe =
-        prep.kleisli #>
-          toNative(Context()) #>
-          typeCheck ^^
-          toDBIO[A]
+        prep.kleisli #> 
+        toNative(Context()) #> 
+        typeCheck.kleisli ^^ 
+        toDBIO[A]
 
       require(pipe.run(expr))("Query compilation failed")
 

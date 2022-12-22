@@ -154,10 +154,6 @@ trait RunLifted[M[_]]:
 
 object RunLifted:
 
-  given identityRun: RunLifted[[x] =>> x] with
-
-    def apply[A](a: () => A): A = a()
-
   given opaqueIdentityRun: RunLifted[Id] with
 
     def apply[A](a: () => A): Id[A] = Id(a())
