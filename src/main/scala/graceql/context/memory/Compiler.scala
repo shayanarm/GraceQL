@@ -12,7 +12,7 @@ object Compiler {
       ta: Type[A]
   ): Expr[Tried[() => A]] =
     import q.reflect.*
-    Tried.`catch` {
+    Tried.apply {
       new TreeTraverser {
         override def traverseTree(tree: Tree)(owner: Symbol): Unit =
           tree match

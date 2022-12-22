@@ -23,16 +23,16 @@ object Tried:
       case '{ Failure($ex: GraceException) }     => Left(ex)
       case '{ new Failure($ex: GraceException) } => Left(ex)
       case _ => throw GraceException(
-        s"Expressions of type `Compiled[${Type.show[A]}]` must be constructed using one of its case constructors directly. See `graceql.quoted.catch` as an example."
+        s"Expressions of type `Compiled[${Type.show[A]}]` must be constructed using one of its case constructors directly. See `graceql.quoted.Tried.apply` as an example."
         )
     unlifted match
       case Right(code) => code
       case Left('{ GraceException(${ Expr(msg) }: String) }) => throw GraceException(msg)
-      case Left('{ GraceException($c: Throwable) }) => throw GraceException("Compilation failed with a cause that could not be evaluated")
+      case Left('{ GraceException($c: Throwable) }) => throw GraceException("Compilation failed without a message. This is heavily discouraged")
       case Left('{ GraceException(${ Expr(msg) }: String, $c: Throwable) }) => throw GraceException(msg)
       case _ => throw GraceException("Compilation could not be unlifted")
 
-  def `catch`[A](thunk: => Expr[A])(using q: Quotes, ta: Type[A]): Expr[Tried[A]] = 
+  def apply[A](thunk: => Expr[A])(using q: Quotes, ta: Type[A]): Expr[Tried[A]] = 
     import q.reflect.*
     try   
       '{Success($thunk)}

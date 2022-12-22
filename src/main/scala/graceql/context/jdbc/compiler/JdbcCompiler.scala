@@ -29,7 +29,7 @@ trait VendorTreeCompiler[V]:
       tv: Type[V]
   ): Expr[Tried[DBIO[A]]] =
     import q.reflect.{Statement => _, *}
-    Tried.`catch` {
+    Tried.apply {
       e match
         case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
           delegate[S].compile[A](body)
