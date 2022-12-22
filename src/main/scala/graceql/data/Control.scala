@@ -149,37 +149,33 @@ object Traverse:
           f(a).zip(acc).map((a,b) => List(a) ++ b)
         }        
 
-trait RunLifted[M[_]]:
+trait FromRunnable[M[_]]:
   def apply[A](a: () => A): M[A]
 
-object RunLifted:
+object FromRunnable:
 
-  given opaqueIdentityRun: RunLifted[Id] with
+  given fromId: FromRunnable[Id] with
 
     def apply[A](a: () => A): Id[A] = Id(a())
 
-  given runFuture[A](using
+  given fromFuture[A](using
       ec: ExecutionContext
-  ): RunLifted[Future] with
+  ): FromRunnable[Future] with
     def apply[A](a: () => A): Future[A] =
       Future { a() }
 
-  given runPromise[A](using run: RunLifted[Future]): RunLifted[Promise] with
+  given fromPromise[A](using run: FromRunnable[Future]): FromRunnable[Promise] with
     def apply[A](a: () => A): Promise[A] =
       Promise[A].completeWith(run(a))
 
-  given runTry[A]: RunLifted[Try] with
+  given fromTry[A]: FromRunnable[Try] with
     def apply[A](a: () => A): Try[A] =
       Try { a() }
 
-  given runOption[A](using
-      run: RunLifted[Try]
-  ): RunLifted[Option] with
+  given fromOption[A]: FromRunnable[Option] with
     def apply[A](a: () => A): Option[A] =
-      run(a).toOption
+      summon[FromRunnable[Try]](a).toOption
 
-  given runEither[A](using
-      run: RunLifted[Try]
-  ): RunLifted[[x] =>> Either[Throwable, x]] with
+  given fromEither[A]: FromRunnable[[x] =>> Either[Throwable, x]] with
     def apply[A](a: () => A): Either[Throwable, A] =
-      run(a).toEither
+      summon[FromRunnable[Try]](a).toEither

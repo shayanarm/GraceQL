@@ -25,7 +25,7 @@ trait Execute[R[_], N[_], C, A, B]:
 object Execute:
   given execLifted[R[_], N[_], C, A, B, G[_]](using
       execUnlifted: Execute[R, N, C, A, B],
-      run: RunLifted[G]
+      run: FromRunnable[G]
   ): Execute[R, N, C, A, G[B]] with
     def apply(compiled: N[A], conn: C): G[B] =
       run(() => execUnlifted(compiled, conn))
@@ -167,7 +167,7 @@ object Transaction:
   extension [C](connection: C)
     def transaction[T[_]](using
         acid: ACID[C],
-        run: RunLifted[T],
+        run: FromRunnable[T],
         me: MonadError[T]
     ): Transaction[T, C, Nothing] =
       Transaction.Continuation(
