@@ -15,7 +15,7 @@ object Compiled:
     case Failure(v) => scala.util.Failure(v)
   }
 
-  def unlift[A](expr: Expr[Compiled[A]])(using q: Quotes, ta: Type[A]): Expr[A] =
+  def get[A](expr: Expr[Compiled[A]])(using q: Quotes, ta: Type[A]): Expr[A] =
     import q.reflect.*
     val unlifted = CompileOps.inlineDefs(expr.asTerm).asExpr match
       case '{ Compiled.Success($code: A) }                => Right(code)

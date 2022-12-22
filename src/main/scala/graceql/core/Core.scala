@@ -114,7 +114,7 @@ trait Context[R[_]]:
     compile[A](query).map(exe)
 
   inline def compileThrow[A](inline query: Capabilities ?=> A): Native[A] =
-    ${Compiled.unlift('{compile[A](query)})}
+    ${Compiled.get('{compile[A](query)})}
   
   inline def compile[A](inline query: Capabilities ?=> A): Compiled[Native[A]]
 
