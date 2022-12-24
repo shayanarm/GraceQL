@@ -8,5 +8,5 @@ final type PostgreSql
 object PostgreSql:
   given postgresQueryContext[S[+X] <: Iterable[X]]: JdbcQueryContext[PostgreSql, S]
     with
-    inline def compile[A](inline query: Api ?=> A): Tried[Native[A]] =
-      ${ Compiler.compile[S,A]('query) }
+    inline def compile[A](inline query: Api ?=> A): Tried[Native[Read[A]]] =
+      ${ Compiler.compile[S, A]('query) }

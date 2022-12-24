@@ -8,6 +8,7 @@ import scala.collection.IterableFactory
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
 import graceql.quoted.Tried
+import graceql.quoted.Tried
 
 trait MemoryQueryContextImpl[R[_]]:
   opaque type IterableFactoryWrapper[S[X] <: Iterable[X]] = IterableFactory[S]
@@ -27,13 +28,15 @@ trait MemoryQueryContextImpl[R[_]]:
 
   inline def notSupported[A](): A = throw GraceException("Unsupported operation. The call to this method should be prevented during compile time.")
 
+  extension [S[+X] <: Iterable[X], A](ma: Source[R, S, A])(using ifac: IterableFactoryWrapper[S])
+      private def merge: S[A] = ma match
+          case Source.Values(c) => c
+          case Source.Ref(mem)  => refToIterable[A, S](mem)
+
   given memoryQueryable[S[+X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S, [x] =>> () => x] with { self =>
     private type Src[A] = Source[R, S, A]
 
     extension [A](ma: Src[A])
-      private def merge: S[A] = ma match
-          case Source.Values(c) => c
-          case Source.Ref(mem)  => refToIterable(mem)(using ifac)
       private inline def mapValues[B](f: S[A] => S[B]) =
         Source.Values(ma.withValues(f))
       private inline def withValues[B](f: S[A] => B): B = f(ma.merge)
@@ -92,7 +95,21 @@ trait MemoryQueryContextImpl[R[_]]:
         }
         new scala.collection.IterableOps.WithFilter[A,Src](iterOps,pred)
 
-      def leftJoin[B](mb: Src[B])(on: (A, B) => Boolean): Src[(A, Option[B])] = ???
+      def leftJoin[B](mb: Src[B])(on: (A, B) => Boolean): Src[(A, Option[B])] = 
+        for
+          a <- ma
+          ob <- mb.filter(b => on(a, b)) match
+            case r if r.size == 0 => pure(None)
+            case r => r.map(Some(_))
+        yield (a, ob)
+
+      override def rightJoin[B](mb: Src[B])(on: (A, B) => Boolean): Src[(Option[A], B)] = 
+        for
+          b <- mb
+          oa <- ma.filter(a => on(a, b)) match
+            case r if r.size == 0 => pure(None)
+            case r => r.map(Some(_))
+        yield (oa, b)
 
       def fullJoin[B](mb: Src[B])(on: (A, B) => Boolean): Src[Ior[A, B]] = ???
 
@@ -102,13 +119,6 @@ trait MemoryQueryContextImpl[R[_]]:
         ma.mapValues(vs => ifac.from(vs.groupBy(f).map[(K, Src[A])]((k,v) => (k, ifac.from(v).asSource))))
 
     extension [A](a: A) def pure: Src[A] = ifac(a).asSource
-
-    extension [A](a: A)
-      @scala.annotation.nowarn def read: Read[R, S, A] =
-        a match
-          case s: (k, g) => (s._1, s._2.read)
-          case s: Src[a] => ifac.from(s.merge.map(_.read))
-          case s: _ => a
 
     extension [A](ref: R[A])
       override def insertMany[B](a: Src[A])(returning: A => B): S[B] = 
@@ -130,11 +140,24 @@ trait MemoryQueryContextImpl[R[_]]:
       def delete() : Unit = notSupported()
   }
 
-  given memoryQueryContext[R[_], S[+X] <: Iterable[X]](using sl: Queryable[R, S, [x] =>> () => x]): QueryContext[R, S] with
+  given memoryQueryContext[S[+X] <: Iterable[X]](using sl: Queryable[R, S, [x] =>> () => x], ifac: IterableFactoryWrapper[S]): QueryContext[R, S] with
     type Native[A] = () => A
     type Connection = DummyImplicit
-    inline def compile[A](inline query: Queryable ?=> A): Tried[() => A] =
+    
+    @scala.annotation.nowarn private def read[A](a: A): graceql.core.Read[R, S, A] =
+      a match
+        case s: (k, g) => (s._1, read(s._2))
+        case s: Source[R, S, x] => ifac.from(s.merge.map(read))
+        case s: _ => a          
+
+    inline def compilePacked[A](inline query: Queryable ?=> A): Tried[() => A] =
       ${ Compiler.compile[R, S, A]('{query(using sl)}) }
+    
+    inline def compile[A](inline query: Queryable ?=> A): Tried[() => graceql.core.Read[R, S, A]] =
+      compilePacked[A](query) match
+        case Tried.Success(code) => Tried.Success(() => read(code()))
+        case Tried.Failure(exc) =>Tried.Failure(exc)
+      
 
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
     def apply(compiled: () => A, conn: DummyImplicit): A = compiled()

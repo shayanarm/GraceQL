@@ -19,18 +19,18 @@ class GraceException(
 
 class terminal extends scala.annotation.StaticAnnotation
 
-trait Execute[R[_], N[_], C, A, B]:
+trait Execute[R[_], N[+_], C, A, B]:
   def apply(compiled: N[A], conn: C): B
 
 object Execute:
-  given execLifted[R[_], N[_], C, A, B, G[_]](using
+  given execLifted[R[_], N[+_], C, A, B, G[_]](using
       execUnlifted: Execute[R, N, C, A, B],
       run: FromRunnable[G]
   ): Execute[R, N, C, A, G[B]] with
     def apply(compiled: N[A], conn: C): G[B] =
       run(() => execUnlifted(compiled, conn))
 
-class Exe[R[_], N[_], C, A](val compiled: N[A]):
+class Exe[R[_], N[+_], C, A](val compiled: N[A]):
   inline def apply[B](using conn: C): B =
     summonInline[Execute[R, N, C, A, B]].apply(compiled, conn)
   inline def as[G[_]](using C): G[A] =
@@ -53,18 +53,9 @@ trait Api[N[+_]]:
   extension [A](a: A)
     def lift: N[A]
 
-final type Read[R[_], M[_], T] = T match
-  case (k, grpd)       => (k, Read[R, M, grpd])
-  case Source[R, M, a] => M[Read[R, M, a]]
-  case _               => T
-
 trait Queryable[R[_], M[_], N[+_]]
     extends Relational[[x] =>> Source[R, M, x]]
     with Api[N]:
-
-  extension [A](a: A)
-    @terminal
-    def read: Read[R, M, A]
   extension [A](values: M[A])
     @targetName("valuesAsSource")
     inline def asSource: Source[R, M, A] = Source.Values(values)
@@ -100,6 +91,7 @@ trait Context[R[_]]:
   type Native[+A]
   type Api
   type Connection
+  type Read[A]
 
   final type Execute[A, B] = graceql.core.Execute[R, Native, Connection, A, B]
 
@@ -107,22 +99,30 @@ trait Context[R[_]]:
 
   protected def exe[A](compiled: Native[A]): Exe[A]
   
-  inline def compile[A](inline query: Api ?=> A): Tried[Native[A]]
+  inline def compile[A](inline query: Api ?=> A): Tried[Native[Read[A]]]
 
-  inline def compileThrow[A](inline query: Api ?=> A): Native[A] =
+  inline def compileThrow[A](inline query: Api ?=> A): Native[Read[A]] =
     ${Tried.get('{compile[A](query)})}
 
-  inline def apply[A](inline query: Api ?=> A): Exe[A] =
+  inline def apply[A](inline query: Api ?=> A): Exe[Read[A]] =
     exe(compileThrow(query))
 
-  inline def tried[A](inline query: Api ?=> A): Try[Exe[A]] =
+  inline def tried[A](inline query: Api ?=> A): Try[Exe[Read[A]]] =
     compile[A](query).map(exe)  
+
+
+final type Read[R[_], M[_], T] = T match
+  case (k, grpd)       => (k, Read[R, M, grpd])
+  case Source[R, M, a] => M[Read[R, M, a]]
+  case _               => T
 
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>
 
   final type Queryable = graceql.core.Queryable[R, M, Native]
   final type Api = Queryable
+
+  final type Read[T] = graceql.core.Read[R, M, T]
   final class Exe[A](compiled: Native[A])
       extends graceql.core.Exe[R, Native, Connection, A](compiled):
     type RowType = A match

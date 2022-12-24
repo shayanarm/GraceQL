@@ -27,7 +27,7 @@ trait VendorTreeCompiler[V]:
       ta: Type[A],
       ts: Type[S],
       tv: Type[V]
-  ): Expr[Tried[DBIO[A]]] =
+  ): Expr[Tried[DBIO[Read[[x] =>> Table[V, x], S, A]]]] =
     import q.reflect.{Statement => _, *}
     Tried.apply {
       e match
@@ -80,7 +80,7 @@ trait VendorTreeCompiler[V]:
 
     def compile[A](expr: Expr[Q => A])(using
         ta: Type[A]
-    ): Expr[DBIO[A]] =
+    ): Expr[DBIO[Read[[x] =>> Table[V, x], S, A]]] =
 
       val fallback: PartialFunction[Expr[Any], Result[Node[Expr, Type]]] = {
         case e =>
@@ -103,7 +103,7 @@ trait VendorTreeCompiler[V]:
         prep.kleisli #> 
         toNative(Context()) #> 
         typeCheck.kleisli ^^ 
-        toDBIO[A]
+        toDBIO[Read[[x] =>> Table[V, x], S, A]]
 
       require(pipe.run(expr))("Query compilation failed")
 

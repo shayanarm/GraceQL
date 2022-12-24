@@ -10,13 +10,20 @@ trait Relational[M[_]] extends MonadZero[M] with MonadPlus[M]:
     def leftJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(A, Option[B])]
 
     def rightJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(Option[A], B)] =
-      mb.leftJoin(ma)((b, a) => on(a, b)).map(p => p.swap)
+      mb.leftJoin(ma)((b, a) => on(a, b)).map((a, b) => (b, a))
 
-    inline def crossJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(A, B)] =
+    def innerJoin[B](mb: M[B])(on: (A, B) => Boolean): M[(A, B)] =
       for
         a <- ma
-        b <- mb if on(a, b)
-      yield (a, b)
+        b <- mb
+        if on(a, b)
+      yield (a, b)          
+
+    def crossJoin[B](mb: M[B]): M[(A, B)] =
+      for
+        a <- ma
+        b <- mb
+      yield (a, b)    
 
     def fullJoin[B](mb: M[B])(on: (A, B) => Boolean): M[Ior[A, B]]
 
@@ -24,4 +31,4 @@ trait Relational[M[_]] extends MonadZero[M] with MonadPlus[M]:
 
     def groupBy[K](f: A => K): M[(K, M[A])]
 
-    inline def groupMap[K,B](f: A => K)(mapper: (K, M[A]) => B): M[B] = groupBy(f).map(mapper.tupled)
+    def groupMap[K,B](f: A => K)(mapper: (K, M[A]) => B): M[B] = groupBy(f).map((k, ma) => mapper(k, ma))

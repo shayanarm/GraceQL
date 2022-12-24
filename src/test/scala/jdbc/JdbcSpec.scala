@@ -162,29 +162,39 @@ trait JdbcSpec[V, S[+X] <: Iterable[X]](
       }.isFailure shouldBe true
     }      
 
-    s"""
-    The high-level JDBC context for $vendor on INSERT commands
-    """ should "insert a single referenced record to a table" in withConnection {
-        // val row = Record1(0, "foo")
-        // val result = vsql {
-        //   record1s.create()
-        //   record1s.insert(row)
-        //   record1s.asSource.read
-        // }.asTry.map(_.toList) shouldEqual (Success(List(row)))
-    }
+    // s"""
+    // The high-level JDBC context for $vendor on INSERT commands
+    // """ should "insert a single literal record ito a table" in withConnection {
+    //     val row = Record1(0, "foo")
+    //     vsql {
+    //       record1s.create()
+    //       record1s.insert(row)
+    //       record1s.asSource
+    //     }.asTry.map(_.toList) shouldEqual (Success(List(row)))
+    // }    
+
+    // s"""
+    // The high-level JDBC context for $vendor on INSERT commands
+    // """ should "insert a single referenced record into a table" in withConnection {
+    //     val row = Record1(0, "foo")
+    //     val result = vsql {
+    //       record1s.create()
+    //       record1s.insert(row)
+    //       record1s.asSource
+    //     }.asTry.map(_.toList) shouldEqual (Success(List(row)))
+    // }
 
 
-    s"""
-    The high-level JDBC context for $vendor on SELECT commands
-    """ should "select any literal" in withConnection {
-        // val referenced = 5
-        // val result = vsql {
-        //   Record1(0, "foo") -> referenced
-        // }.asTry shouldEqual (Success(Record1(0, "foo") -> referenced))
-    }
+    // s"""
+    // The high-level JDBC context for $vendor on SELECT commands
+    // """ should "select any literal" in withConnection {
+    //     val referenced = 5
+    //     val result = vsql {
+    //       "foo"
+    //     }.asTry shouldEqual "foo"
+    // }
 
-    // Todo: make compile module override mechanism OO based rather than partial function composition based. 
-    // Todo: enforce all the statements and the expressions within a query to have a @terminal method as their last call
+    // Todo: make compile module override mechanism OO based rather than partial function composition based.
 }
 
 /**
