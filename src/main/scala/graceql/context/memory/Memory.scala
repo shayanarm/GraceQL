@@ -150,13 +150,13 @@ trait MemoryQueryContextImpl[R[_]]:
         case s: Source[R, S, x] => ifac.from(s.merge.map(read))
         case s: _ => a          
 
-    inline def compilePacked[A](inline query: Queryable ?=> A): Tried[() => A] =
+    inline def toFunction[A](inline query: Queryable ?=> A): Tried[() => A] =
       ${ Compiler.compile[R, S, A]('{query(using sl)}) }
     
     inline def compile[A](inline query: Queryable ?=> A): Tried[() => graceql.core.Read[R, S, A]] =
-      compilePacked[A](query) match
+      toFunction[A](query) match
         case Tried.Success(code) => Tried.Success(() => read(code()))
-        case Tried.Failure(exc) =>Tried.Failure(exc)
+        case Tried.Failure(exc) =>  Tried.Failure(exc)
       
 
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
