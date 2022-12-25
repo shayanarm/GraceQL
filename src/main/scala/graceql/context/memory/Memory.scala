@@ -148,7 +148,7 @@ trait MemoryQueryContextImpl[R[_]]:
       a match
         case s: (k, g) => (s._1, read(s._2))
         case s: Source[R, S, x] => ifac.from(s.merge.map(read))
-        case _ => a              
+        case s: _ => a              
 
     inline def compile[A](inline query: Queryable ?=> A): Tried[() => graceql.core.Read[R, S, A]] =
       ${ Compiler.compile[R, S, graceql.core.Read[R, S, A]]('{read(query(using sl))}) }
