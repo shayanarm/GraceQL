@@ -15,6 +15,16 @@ object CompileOps {
         super.transformTerm(Term.betaReduce(term).getOrElse(term))(owner)
     mapper.transformTerm(e)(Symbol.spliceOwner)
 
+  def shrinkBlocks(using q: Quotes)(e: q.reflect.Term): q.reflect.Term =
+    import q.reflect.*
+      new TreeMap {
+        override def transformTerm(term: Term)(owner: Symbol) =
+          super.transformTerm(term)(owner) match
+            case Inlined(_, l, e) => transformTerm(Block(l, e))(owner) 
+            case Block(Nil, e)    => transformTerm(e)(owner)
+            case term => term
+      }.transformTerm(e)(Symbol.spliceOwner)
+
   def inlineDefs(using q: Quotes)(term: q.reflect.Term): q.reflect.Term =
     import q.reflect.*
     def replace(name: String, wit: Term)(block: Term): Term =
@@ -28,29 +38,22 @@ object CompileOps {
     val mapper = new TreeMap:
       override def transformTerm(term: Term)(owner: Symbol): Term =
         super.transformTerm(term)(owner) match
-          case Inlined(_, l, e) => transformTerm(Block(l, e))(owner)
-          case Block(Nil, e)    => e
+          case Inlined(o, l, e) => transformTerm(Block(l, e))(owner) match
+            case Block(l2, e2) => Inlined(o, l2.asInstanceOf[List[Definition]], e2)
+            case other => Inlined(o, Nil, other)          
           case b @ Block(List(DefDef(n1, _, _, _)), Closure(Ident(n2), _))
               if n1 == n2 =>
             b 
-          case Block(h :: t, e) =>
+          case original@ Block(h :: t, e) =>
             val block = transformTerm(Block(t, e))(owner)
             h match
-              case ValDef(name, _, None) => throw NotImplementedError(name)
-              case v @ ValDef(name, _, Some(b)) =>
-                if v.symbol.flags.is(Flags.Mutable) then
-                  throw GraceException(
-                    "Mutable variable declarations inside queries are not supported."
-                  )
-                else replace(name, b)(block)
-              case d : DefDef =>
-                throw GraceException(
-                  "Method definitions inside queries are not supported."
-                )
+              case v @ ValDef(name, _, Some(b)) if  !v.symbol.flags.is(Flags.Mutable) =>
+                replace(name, b)(block)
               case other => 
                 block match
                   case Block(stmts, expr) => Block(h :: stmts, expr)
-                  case o => Block(List(h), o)              
+                  case Inlined(_, stmts, expr) => Block(h :: stmts, expr)
+                  case o => Block(List(h), o) 
           case other => other
     mapper.transformTerm(term)(Symbol.spliceOwner)
 

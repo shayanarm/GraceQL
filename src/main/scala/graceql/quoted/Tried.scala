@@ -17,14 +17,26 @@ object Tried:
 
   def get[A](expr: Expr[Tried[A]])(using q: Quotes, ta: Type[A]): Expr[A] =
     import q.reflect.*
-    val unlifted = CompileOps.inlineDefs(expr.asTerm).asExpr match
-      case '{ Success($code: A) }                => Right(code)
-      case '{ new Success($code: A) }            => Right(code)
-      case '{ Failure($ex: GraceException) }     => Left(ex)
-      case '{ new Failure($ex: GraceException) } => Left(ex)
-      case _ => throw GraceException(
-        s"Expressions of type `Compiled[${Type.show[A]}]` must be constructed using one of its case constructors directly. See `graceql.quoted.Tried.apply` as an example."
-        )
+    import CompileOps.*
+
+    val unlifted = inlineDefs(expr.asTerm).asExprOf[Tried[A]] match
+        case '{ Success($code: A) }                => Right(code)
+        case '{ new Success($code: A) }            => Right(code)
+        case '{ Failure($ex: GraceException) }     => Left(ex)
+        case '{ new Failure($ex: GraceException) } => Left(ex)
+        case other => throw GraceException(
+          s"""
+          |Expressions of type `Compiled[${Type.show[A]}]` must be constructed using one of its case constructors directly. See `graceql.quoted.Tried.apply` as an example.
+          |
+          |Tree code:
+          |
+          |${other.asTerm.show(using Printer.TreeShortCode)}
+          |
+          |Tree structure:
+          |
+          |${other.asTerm.show(using Printer.TreeStructure)}
+          """.stripMargin
+          )
     unlifted match
       case Right(code) => code
       case Left('{ GraceException(${ Expr(msg) }: String) }) => throw GraceException(msg)
@@ -41,3 +53,17 @@ object Tried:
         '{Failure(GraceException(${Expr(e.getMessage)}))}
     
 
+// val q = {
+//   val memoryQueryContext_this: Context_this.type = Context_this
+
+//   Success.apply((() => memoryQueryContext_this.inline$read({
+//     val evidence$2$proxy1 = memoryQueryContext_this.inline$sl
+//     evidence$2$proxy1.map({
+//       val values$proxy1 = Seq.apply[Int](1, 2, 3)
+
+//       Source.Values.apply(values$proxy1)
+//     })(((_$1: Int) => _$1.+(2)))
+//   })))
+// }        
+
+// val s = Success.apply((() => Context_this.inline$read(evidence$2$proxy1.map(Source.Values.apply(Seq.apply(1, 2, 3)))(((_$1: Int) => _$1.+(2))))))

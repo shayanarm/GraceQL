@@ -143,20 +143,15 @@ trait MemoryQueryContextImpl[R[_]]:
   given memoryQueryContext[S[+X] <: Iterable[X]](using sl: Queryable[R, S, [x] =>> () => x], ifac: IterableFactoryWrapper[S]): QueryContext[R, S] with
     type Native[A] = () => A
     type Connection = DummyImplicit
-    
+
     @scala.annotation.nowarn private def read[A](a: A): graceql.core.Read[R, S, A] =
       a match
         case s: (k, g) => (s._1, read(s._2))
         case s: Source[R, S, x] => ifac.from(s.merge.map(read))
-        case s: _ => a          
+        case _ => a              
 
-    inline def toFunction[A](inline query: Queryable ?=> A): Tried[() => A] =
-      ${ Compiler.compile[R, S, A]('{query(using sl)}) }
-    
     inline def compile[A](inline query: Queryable ?=> A): Tried[() => graceql.core.Read[R, S, A]] =
-      toFunction[A](query) match
-        case Tried.Success(code) => Tried.Success(() => read(code()))
-        case Tried.Failure(exc) =>  Tried.Failure(exc)
+      ${ Compiler.compile[R, S, graceql.core.Read[R, S, A]]('{read(query(using sl))}) }
       
 
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
