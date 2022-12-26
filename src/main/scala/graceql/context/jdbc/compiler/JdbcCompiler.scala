@@ -5,9 +5,8 @@ import graceql.core.*
 import graceql.syntax.*
 import graceql.context.jdbc.*
 import graceql.quoted.CompileOps
-import scala.util.Try
 import graceql.data.Kleisli
-import graceql.quoted.Tried
+import scala.util.Try
 
 type JdbcCompilationFramework = JdbcSchemaValidation
 
@@ -20,6 +19,16 @@ trait VendorTreeCompiler[V]:
       Type[S]
   ): Delegate[S] = new Delegate[S]
 
+  def tryCompile[S[+X] <: Iterable[X], A](
+      e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
+  )(using
+      q: Quotes,
+      ta: Type[A],
+      ts: Type[S],
+      tv: Type[V]
+  ): Expr[Try[DBIO[Read[[x] =>> Table[V, x], S, A]]]] =
+    CompileOps.tryEval(compile[S, A](e))
+
   def compile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
   )(using
@@ -27,13 +36,11 @@ trait VendorTreeCompiler[V]:
       ta: Type[A],
       ts: Type[S],
       tv: Type[V]
-  ): Expr[Tried[DBIO[Read[[x] =>> Table[V, x], S, A]]]] =
+  ): Expr[DBIO[Read[[x] =>> Table[V, x], S, A]]] =
     import q.reflect.{Statement => _, *}
-    Tried.apply {
-      e match
-        case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
-          delegate[S].compile[A](body)
-    }
+    e match
+      case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
+        delegate[S].compile[A](body)
 
   protected def binary(recurse: Node[Expr, Type] => Expr[String])(using
       Quotes
@@ -100,10 +107,10 @@ trait VendorTreeCompiler[V]:
           .mapError(_.getMessage)
 
       val pipe =
-        prep.kleisli #> 
-        toNative(Context()) #> 
-        typeCheck.kleisli ^^ 
-        toDBIO[Read[[x] =>> Table[V, x], S, A]]
+        prep.kleisli #>
+          toNative(Context()) #>
+          typeCheck.kleisli ^^
+          toDBIO[Read[[x] =>> Table[V, x], S, A]]
 
       require(pipe.run(expr))("Query compilation failed")
 

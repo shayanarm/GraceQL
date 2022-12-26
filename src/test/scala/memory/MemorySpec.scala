@@ -48,7 +48,8 @@ class MemorySpec extends AnyFlatSpec with should.Matchers {
 
   it should "execute any tree inside it as is" in {
     query[IterRef, Seq].apply {
-      Seq(1,2,3).asSource.map(_ + 2)
+      val seq = Seq(1,2,3).asSource
+      seq.map(_ + 2)
     }.run shouldBe (Seq(1, 2, 3))
   }
 

@@ -7,8 +7,8 @@ import scala.quoted.*
 import scala.collection.IterableFactory
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
-import graceql.quoted.Tried
-import graceql.quoted.Tried
+
+
 
 trait MemoryQueryContextImpl[R[_]]:
   opaque type IterableFactoryWrapper[S[X] <: Iterable[X]] = IterableFactory[S]
@@ -150,8 +150,11 @@ trait MemoryQueryContextImpl[R[_]]:
         case s: Source[R, S, x] => ifac.from(s.merge.map(read))
         case s: _ => a              
 
-    inline def compile[A](inline query: Queryable ?=> A): Tried[() => graceql.core.Read[R, S, A]] =
+    inline def compile[A](inline query: Queryable ?=> A): () => graceql.core.Read[R, S, A] =
       ${ Compiler.compile[R, S, graceql.core.Read[R, S, A]]('{read(query(using sl))}) }
+
+    inline def tryCompile[A](inline query: Queryable ?=> A): Try[() => graceql.core.Read[R, S, A]] =
+      ${ Compiler.tryCompile[R, S, graceql.core.Read[R, S, A]]('{read(query(using sl))}) }
       
 
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with

@@ -8,6 +8,14 @@ object CompileOps {
 
   def placeholder[A]: A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")
 
+  def tryEval[A](thunk: => Expr[A])(using q: Quotes, ta: Type[A]): Expr[Try[A]] = 
+    import q.reflect.*
+    try   
+      '{Success($thunk)}
+    catch
+      case e =>
+        '{Failure(GraceException(${Expr(e.getMessage)}))}  
+
   def betaReduceAll(using q: Quotes)(e: q.reflect.Term): q.reflect.Term =
     import q.reflect.*
     val mapper = new TreeMap:
@@ -20,7 +28,7 @@ object CompileOps {
       new TreeMap {
         override def transformTerm(term: Term)(owner: Symbol) =
           super.transformTerm(term)(owner) match
-            case Inlined(_, l, e) => transformTerm(Block(l, e))(owner) 
+            // case Inlined(None, l, e) => transformTerm(Block(l, e))(owner) 
             case Block(Nil, e)    => transformTerm(e)(owner)
             case term => term
       }.transformTerm(e)(Symbol.spliceOwner)
@@ -31,7 +39,7 @@ object CompileOps {
       new TreeMap {
         override def transformTerm(term: Term)(owner: Symbol) =
           super.transformTerm(term)(owner) match
-            case i@Ident(n) if n == name => wit
+            case i@Ident(n) if i.symbol.name == name => wit
             case t                     => t
       }.transformTerm(block)(Symbol.spliceOwner)
 
@@ -47,12 +55,11 @@ object CompileOps {
           case original@ Block(h :: t, e) =>
             val block = transformTerm(Block(t, e))(owner)
             h match
-              case v @ ValDef(name, _, Some(b)) if  !v.symbol.flags.is(Flags.Mutable) =>
+              case v @ ValDef(name, _, Some(b)) if !v.symbol.flags.is(Flags.Mutable) =>
                 replace(name, b)(block)
               case other => 
                 block match
                   case Block(stmts, expr) => Block(h :: stmts, expr)
-                  case Inlined(_, stmts, expr) => Block(h :: stmts, expr)
                   case o => Block(List(h), o) 
           case other => other
     mapper.transformTerm(term)(Symbol.spliceOwner)

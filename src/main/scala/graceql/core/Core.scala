@@ -7,7 +7,6 @@ import scala.concurrent.ExecutionContext
 import scala.compiletime.summonInline
 import scala.concurrent.Promise
 import scala.util.Try
-import graceql.quoted.Tried
 
 class GraceException(
     val message: Option[String] = None,
@@ -98,17 +97,16 @@ trait Context[R[_]]:
   type Exe[A] <: graceql.core.Exe[R, Native, Connection, A]
 
   protected def exe[A](compiled: Native[A]): Exe[A]
-  
-  inline def compile[A](inline query: Api ?=> A): Tried[Native[Read[A]]]
 
-  inline def compileThrow[A](inline query: Api ?=> A): Native[Read[A]] =
-    ${Tried.get('{compile[A](query)})}
+  inline def compile[A](inline query: Api ?=> A): Native[Read[A]]
+
+  inline def tryCompile[A](inline query: Api ?=> A): Try[Native[Read[A]]]
 
   inline def apply[A](inline query: Api ?=> A): Exe[Read[A]] =
-    exe(compileThrow(query))
+    exe(compile(query))
 
   inline def tried[A](inline query: Api ?=> A): Try[Exe[Read[A]]] =
-    compile[A](query).map(exe)  
+    tryCompile[A](query).map(exe)  
 
 
 final type Read[R[_], M[_], T] = T match
