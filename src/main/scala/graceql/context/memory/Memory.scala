@@ -56,7 +56,7 @@ trait MemoryQueryContextProvider[R[_]]:
 
       def flatMap[B](f: A => Src[B]): Src[B] =
         ma.mapValues { vs =>
-          vs.flatMap{a =>
+          vs.flatMap { a =>
             f(a).withValues(identity)
           } |> ifac.from
         }

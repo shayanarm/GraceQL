@@ -28,8 +28,9 @@ object CompileOps {
       new TreeMap {
         override def transformTerm(term: Term)(owner: Symbol) =
           super.transformTerm(term)(owner) match
-            // case Inlined(None, l, e) => transformTerm(Block(l, e))(owner) 
-            case Block(Nil, e)    => transformTerm(e)(owner)
+            case Block(Nil, e)    => e
+            case Inlined(_, Nil, e) => e
+            case Inlined(_, l, e) => Block(l, e)
             case term => term
       }.transformTerm(e)(Symbol.spliceOwner)
 
