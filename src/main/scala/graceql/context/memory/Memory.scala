@@ -26,12 +26,6 @@ trait MemoryQueryContextProvider[R[_]]:
   protected def refUpdate[A](ref: R[A])(predicate: A => Boolean)(f: A => A): Int
   protected def refDropWhile[A](ref: R[A])(predicate: A => Boolean): Int
   protected def refClear[A](ref: R[A]): Int
-
-  def logged[A](a: => A): A = 
-    println("evaluating...")
-    val r: A = a
-    println(s"success: $r")
-    r
     
   inline def notSupported[A](): A = throw GraceException("Unsupported operation. The call to this method should be prevented during compile time.")
 
