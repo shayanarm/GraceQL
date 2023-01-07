@@ -3,6 +3,7 @@ package graceql.context.memory
 import graceql.core.*
 import graceql.context.memory.Compiler
 import graceql.data.*
+import graceql.syntax.*
 import scala.quoted.*
 import scala.collection.IterableFactory
 import scala.collection.mutable.ArrayBuffer
@@ -10,7 +11,7 @@ import scala.util.Try
 
 
 
-trait MemoryQueryContextImpl[R[_]]:
+trait MemoryQueryContextProvider[R[_]]:
   opaque type IterableFactoryWrapper[S[X] <: Iterable[X]] = IterableFactory[S]
   object IterableFactoryWrapper:
     given IterableFactoryWrapper[Seq] = Seq
@@ -20,12 +21,18 @@ trait MemoryQueryContextImpl[R[_]]:
     given IterableFactoryWrapper[LazyList] = LazyList
     given IterableFactoryWrapper[Iterable] = Iterable
 
-  protected def refToIterable[A,S[_]](ref: R[A])(using ifac: IterableFactory[S]): S[A]
+  protected def refToIterable[A, S[_]](ref: R[A])(using ifac: IterableFactory[S]): S[A]
   protected def refInsertMany[A](ref: R[A])(as: Iterable[A]): Iterable[A]
   protected def refUpdate[A](ref: R[A])(predicate: A => Boolean)(f: A => A): Int
   protected def refDropWhile[A](ref: R[A])(predicate: A => Boolean): Int
   protected def refClear[A](ref: R[A]): Int
 
+  def logged[A](a: => A): A = 
+    println("evaluating...")
+    val r: A = a
+    println(s"success: $r")
+    r
+    
   inline def notSupported[A](): A = throw GraceException("Unsupported operation. The call to this method should be prevented during compile time.")
 
   extension [S[+X] <: Iterable[X], A](ma: Source[R, S, A])(using ifac: IterableFactoryWrapper[S])
@@ -33,13 +40,8 @@ trait MemoryQueryContextImpl[R[_]]:
           case Source.Values(c) => c
           case Source.Ref(mem)  => refToIterable[A, S](mem)
 
-  given memoryQueryable[S[+X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S, [x] =>> () => x] with { self =>
-    private type Src[A] = Source[R, S, A]
-
-    extension [A](ma: Src[A])
-      private inline def mapValues[B](f: S[A] => S[B]) =
-        Source.Values(ma.withValues(f))
-      private inline def withValues[B](f: S[A] => B): B = f(ma.merge)
+  given memoryQueryable[S[+X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S, [x] =>> () => x] with {
+    type Src[A] = Source[R, S, A]
 
     extension[A](bin: () => A)
       def typed[B]: () => B = notSupported()
@@ -51,17 +53,18 @@ trait MemoryQueryContextImpl[R[_]]:
       def native(s: (() => Any)*): () => Any = notSupported()
 
     extension [A](ma: Src[A])
-
+      private inline def mapValues[B](f: S[A] => S[B]): Src[B] =
+        Source.Values(ma.withValues(f))
+      private def withValues[B](f: S[A] => B): B = f(ma.merge)
       def size: Int = ma.merge.size
       override def map[B](f: A => B): Src[B] =
         ma.mapValues(v => ifac.from(v.map(f)))
 
       def flatMap[B](f: A => Src[B]): Src[B] =
         ma.mapValues { vs =>
-          val r = vs.flatMap{a =>
+          vs.flatMap{a =>
             f(a).withValues(identity)
-          }
-          ifac.from(r)
+          } |> ifac.from
         }
 
       def concat(other: Src[A]): Src[A] =
@@ -148,13 +151,13 @@ trait MemoryQueryContextImpl[R[_]]:
       a match
         case s: (k, g) => (s._1, read(s._2))
         case s: Source[R, S, x] => ifac.from(s.merge.map(read))
-        case s: _ => a              
+        case _ => a              
 
     inline def compile[A](inline query: Queryable ?=> A): () => graceql.core.Read[R, S, A] =
-      ${ Compiler.compile[R, S, graceql.core.Read[R, S, A]]('{read(query(using sl))}) }
+      ${ Compiler.compile[R, S, graceql.core.Read[R, S, A]]('{read[A](query(using sl))}) }
 
     inline def tryCompile[A](inline query: Queryable ?=> A): Try[() => graceql.core.Read[R, S, A]] =
-      ${ Compiler.tryCompile[R, S, graceql.core.Read[R, S, A]]('{read(query(using sl))}) }
+      ${ Compiler.tryCompile[R, S, graceql.core.Read[R, S, A]]('{read[A](query(using sl))}) }
       
 
   given execSync[A,R[_]]: Execute[R, [x] =>> () => x, DummyImplicit, A, A] with
@@ -198,7 +201,7 @@ class IterRef[A] private(private val underlying: ArrayBuffer[A]):
     l
   }      
 
-object IterRef extends MemoryQueryContextImpl[IterRef]:
+object IterRef extends MemoryQueryContextProvider[IterRef]:
   
   protected def refToIterable[A, S[_]](ref: IterRef[A])(using ifac: IterableFactory[S]): S[A] = 
     ref.value[S]
@@ -217,7 +220,7 @@ object IterRef extends MemoryQueryContextImpl[IterRef]:
     ref.clear()  
 
 final type Eval[A]
-object Eval extends MemoryQueryContextImpl[Eval]:
+object Eval extends MemoryQueryContextProvider[Eval]:
   def absurd[A,B](ref: Eval[A]): B = throw new GraceException(s"Supplying a value for ${Eval.getClass.getSimpleName} is impossible!")
   protected def refToIterable[A,S[_]](ref: Eval[A])(using ifac: IterableFactory[S]): S[A] = absurd(ref)
   protected def refInsertMany[A](ref: Eval[A])(as: Iterable[A]): Iterable[A] = absurd(ref)
