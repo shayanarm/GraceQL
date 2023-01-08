@@ -173,9 +173,7 @@ trait JdbcSpec[V, S[+X] <: Iterable[X]](
     //     }.asTry.map(_.toList) shouldEqual (Success(List(row)))
     // }    
 
-    // s"""
-    // The high-level JDBC context for $vendor on INSERT commands
-    // """ should "insert a single referenced record into a table" in withConnection {
+    // it should "insert a single referenced record into a table" in withConnection {
     //     val row = Record1(0, "foo")
     //     val result = vsql {
     //       record1s.create()
@@ -185,14 +183,19 @@ trait JdbcSpec[V, S[+X] <: Iterable[X]](
     // }
 
 
-    // s"""
-    // The high-level JDBC context for $vendor on SELECT commands
-    // """ should "select any literal" in withConnection {
-    //     val referenced = 5
-    //     val result = vsql {
-    //       "foo"
-    //     }.asTry shouldEqual "foo"
-    // }
+    s"""
+    The high-level JDBC context for $vendor on SELECT commands
+    """ should "select any Scala value without the database roundtrip" in withConnection {
+        vsql {
+          (() => Seq("foo").size)()
+        }.run shouldEqual 1
+    }
+    
+    it should "select a simple arithmetic expression" in withConnection {
+        vsql {
+          native"${2.lift} + ${2.lift}".typed[Int]
+        }.run shouldEqual 4
+    }
 
     // Todo: make compile module override mechanism OO based rather than partial function composition based.
 }
