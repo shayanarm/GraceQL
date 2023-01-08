@@ -3,12 +3,11 @@ package graceql.data
 type Cont[R, A] = ContT[R, Id, A]
 
 trait ContT[R, M[_], A]:
-  def apply(f: A ?=> M[R]): M[R]
-  inline def run(f: A => M[R]): M[R] = apply(a ?=> f(a))
+  def run(f: A => M[R]): M[R]
+  inline def apply(f: A ?=> M[R]): M[R] = run(a => f(using a))  
 
 object ContT:
-    def apply[R, M[_], A](f: (A => M[R]) => M[R]): ContT[R, M, A] = new ContT[R, M, A]:
-      def apply(g: A ?=> M[R]): M[R] = f(a => g(using a))
+    def apply[R, M[_], A](f: (A => M[R]) => M[R]): ContT[R, M, A] = g => f(g)
 
     given monad[R, M[_]]: Monad[[x] =>> ContT[R, M, x]] with
 
