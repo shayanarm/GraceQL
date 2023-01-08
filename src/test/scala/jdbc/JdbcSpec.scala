@@ -222,9 +222,7 @@ object JdbcSpec:
   case class Record4(
       @fk(classOf[Record2], "field1", OnDelete.SetDefault) field1: Int,
       @fk(classOf[Record2], "field1", OnDelete.Restrict) field2: Int,
-      @fk(classOf[Record2], "field1", OnDelete.SetNull) field3: Option[
-        Int
-      ]
+      @fk(classOf[Record2], "field1", OnDelete.SetNull) field3: Option[Int]
   ) derives SqlRow
 
   @schema("record5s")

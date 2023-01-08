@@ -103,37 +103,20 @@ class GenSqlCodecSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
-  // Note: Incorrect. single literal values do not generate a SQL statement
-  // it should "parse a literal integer as valid SQL expression" in {
-  //   parseAssert {
-  //     native"${1.lift}".unlift
-  //   } {
-  //     "1"
-  //   }
-  // }
-
-  it should "parse a simple typed native query" in {
-    parseAssert {
-      native"SELECT * FROM DUAL".typed[Unit].unlift
-    } {
-      "SELECT * FROM DUAL"
-    }
-  }
-
   it should "parse parentheses around expressions and nested queries" in {
     parseAssert {
-      native"SELECT (${1.lift}) FROM (SELECT * FROM DUAL) AS u".unlift
+      native"SELECT (${1.lift}) FROM (SELECT * FROM ${users.lift}) AS u".unlift
     } {
-      "SELECT 1 FROM (SELECT * FROM DUAL) AS u"
+      "SELECT 1 FROM (SELECT * FROM users) AS u"
     }
   }
 
   it should "parse a query without requiring parentheses for the embedded subquery" in {
     parseAssert {
-      val sub = native"SELECT * FROM DUAL"
+      val sub = native"SELECT * FROM ${users.lift}"
       native"SELECT * FROM (SELECT * FROM ${sub})".unlift
     } {
-      "SELECT * FROM (SELECT * FROM (SELECT * FROM DUAL))"
+      "SELECT * FROM (SELECT * FROM (SELECT * FROM users))"
     }
   }
 
@@ -176,17 +159,26 @@ class GenSqlCodecSpec extends AnyFlatSpec with should.Matchers {
       "(true AND false) AND (true OR false)"
     }
   }
-
+  
   it should "parse a custom function provided that its name is not a reserved keyword" in {
     parseAssert {
-      native"myfunc(${1.lift})".unlift
+      native"myfunc(${1.lift})"
     } {
       "myfunc(1)"
     }
 
-      sql[GenSql, Iterable].tried {
-        native"as(${1.lift})".unlift
-      }.isFailure shouldBe true
+    inline def myFunc(using api: Api[DBIO]): (Int, Int) => String = 
+      api.function.binary[Int, Int, String]((i1, i2) => native"myfunc($i1, $i2)")
+
+    parseAssert {
+      myFunc(1, 2)
+    } {
+      "myfunc(1, 2)"
+    }
+
+    sql[GenSql, Iterable].tried {
+      native"as(${1.lift})".unlift
+    }.isFailure shouldBe true
   }
 
   it should "parse a select statement with WHERE clause" in {

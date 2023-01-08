@@ -125,7 +125,6 @@ enum Node[L[_], T[_]]:
   case Tuple[L[_], T[_]](columns: List[Node[L, T]]) extends Node[L, T]
   case Table[L[_], T[_], A](table: L[String], tpe: T[A]) extends Node[L, T]
   case Values[L[_], T[_], A](values: L[Iterable[A]]) extends Node[L, T]
-  case Dual() extends Node[L, T]
   case As[L[_], T[_]](tree: Node[L, T], alias: String) extends Node[L, T]
   case Ref(name: String) extends Node[L, T]
   case SelectCol[L[_], T[_]](tree: Node[L, T], selection: Node[L, T])
@@ -190,7 +189,6 @@ enum Node[L[_], T[_]]:
       case Tuple(elems)    => elems.traverse(_.trans[M](ord)(f)).map(Tuple(_))
       case Table(_, _)     => node.pure[M]
       case Values(_)       => node.pure[M]
-      case Dual()          => node.pure[M]
       case As(t, n)        => t.trans[M](ord)(f).map(As(_, n))
       case Ref(_)          => node.pure[M]
       case SelectCol(t, c) => t.trans[M](ord)(f) ~ c.trans[M](ord)(f) ^^ (SelectCol(_,_))
@@ -254,7 +252,6 @@ enum Node[L[_], T[_]]:
       case Tuple(elems)    => elems.foldLeft(identity[A])((z,i) => z andThen i.fold(f))
       case Table(_, _)     => identity
       case Values(_)       => identity
-      case Dual()          => identity
       case As(t, n)        => t.fold(f)
       case Ref(_)          => identity
       case SelectCol(t, c) => t.fold(f) andThen c.fold(f)
@@ -313,7 +310,6 @@ enum Node[L[_], T[_]]:
       case Tuple(elems)    => Tuple(elems.map(_.both(fl, ft)))
       case Table(n, t)     => Table(fl(n), ft(t))
       case Values(ls)      => Values(fl(ls))
-      case Dual()          => Dual()
       case As(t, n)        => As(t.both(fl, ft), n)
       case Ref(n)          => Ref(n)
       case SelectCol(t, c) => SelectCol(t.both(fl, ft), c.both(fl, ft))
@@ -465,11 +461,6 @@ class SqlParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
       "Values"
     )
 
-    def dual: Parser[N] = apply(
-      { case t: Dual[_, _] => t },
-      "Dual"
-    )
-
     def star: Parser[N] = apply(
       { case t: Star[_, _] => t },
       "Star"
@@ -538,11 +529,11 @@ class SqlParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   def src: Parser[N] =
     aliased(false)(
       embedded.table | subquery | embedded.values
-    ) | dual    
+    )    
   def parens[A](required: Boolean)(without: => Parser[A]): Parser[A] =
     val `with` = "(" ~> parens(false)(without) <~ ")"
     if required then `with` else `with` | without
-  def dual: Parser[N] = embedded.dual | kw.dual ^^ { _ => Dual() }
+
   def ident: Parser[String] = """[a-zA-Z][a-zA-Z0-9_]*""".r ^? ({
     case p if !kw.values.exists(r => r.matches(p)) => p
   }, t => s"Keyword \"${t}\" cannot be used as identifier")
@@ -824,7 +815,6 @@ object SqlParser:
     case distinct extends kw("""(?i)distinct""")
     case from extends kw("""(?i)from""")
     case as extends kw("""(?i)as""")
-    case dual extends kw("""(?i)dual""")
     case star extends kw("""\*""")
     case not extends kw("""(?i)not""")
     case all extends kw("""(?i)all""")

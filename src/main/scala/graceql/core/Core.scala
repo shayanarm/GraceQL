@@ -51,6 +51,19 @@ trait Api[N[+_]]:
 
   extension [A](a: A) def lift: N[A]
 
+  object function:
+
+    inline def nullary[A](inline f: N[Any]): () => A = 
+      () => f.typed[A].unlift
+    inline def unary[A, B](inline f: N[A] => N[Any]): A => B = 
+      a => f(a.lift).typed[B].unlift
+    inline def binary[A1, A2, B](inline f: (N[A1], N[A2]) => N[Any]): (A1, A2) => B = 
+      (a1, a2) => f(a1.lift, a2.lift).typed[B].unlift
+    inline def ternary[A1, A2, A3, B](inline f: (N[A1], N[A2], N[A3]) => N[Any]): (A1, A2, A3) => B =
+      (a1, a2, a3) => f(a1.lift, a2.lift, a3.lift).typed[B].unlift
+    inline def quarternary[A1, A2, A3, A4, B](inline f: (N[A1], N[A2], N[A3], N[A4]) => N[Any]): (A1, A2, A3, A4) => B =
+      (a1, a2, a3, a4) => f(a1.lift, a2.lift, a3.lift, a4.lift).typed[B].unlift  
+
 trait Queryable[R[_], M[_], N[+_]]
     extends Relational[[x] =>> Source[R, M, x]]
     with Api[N]:
@@ -139,8 +152,7 @@ trait QueryContext[R[_], M[+_]] extends Context[R]:
   protected def exe[A](compiled: Native[A]): Exe[A] = Exe(compiled)
 
 trait Acid[C]:
-  def session(connection: C): C
-  def open(connection: C): Unit
+  def open(connection: C): C
   def commit(connection: C): Unit
   def rollback(connection: C): Unit
 
@@ -156,8 +168,7 @@ object Transaction:
     ): ContT[R, T, C] =
       ContT.apply[R, T, C] { todo =>
         for
-          session <- run(() => acid.session(connection))
-          _ <- run(() => acid.open(session))
+          session <- run(() => acid.open(connection))
           thunk = for
             r <- todo(session)
             _ <- run(() => acid.commit(session))

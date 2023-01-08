@@ -91,7 +91,9 @@ trait VendorTreeCompiler[V]:
 
       val fallback: PartialFunction[Expr[Any], Result[Node[Expr, Type]]] = {
         case e =>
-          s"Unsupported operation!\n${e.asTerm.show(using Printer.TreeAnsiCode)}".err
+          s"""Unsupported operation!
+          |${e.asTerm.show(using Printer.TreeAnsiCode)}
+          |${e.asTerm.show(using Printer.TreeStructure)}""".stripMargin.err
       }
       def toNative(
           ctx: Context
@@ -282,7 +284,6 @@ trait VendorTreeCompiler[V]:
                 '{ $o.fold("NULL") { i => ${ binary(Literal('{ i })) } } }
               case '{ $i: String } => '{ "\"" + $i + "\"" }
               case v               => '{ $v.toString }
-          case Dual() => '{ "DUAL" }
           case FunApp(func, args, _) =>
             val encodedArgs = args.map { a =>
               a match

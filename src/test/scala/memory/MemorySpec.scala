@@ -17,6 +17,7 @@ import org.scalatest._
 import flatspec._
 import matchers._
 import java.util.concurrent.TimeUnit
+import scala.util.Failure
 
 class MemorySpec extends AnyFlatSpec with should.Matchers {
 
@@ -48,12 +49,13 @@ class MemorySpec extends AnyFlatSpec with should.Matchers {
   }
 
   it should "execute any tree inside it as is" in {
-    query[Eval, Seq] {
-      val seq = Seq(1, 2, 3).asSource
+    val seq = Seq(1, 2, 3)
+    query[IterRef, Seq] {
+      seq.asSource
       for
         s <- seq.filter(_ => true).map(_ + 2)
         if s == s
       yield s - 2
-    }.run shouldBe Seq(1, 2, 3)
+    }.run shouldBe seq
   }
 }
