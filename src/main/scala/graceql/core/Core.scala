@@ -49,8 +49,7 @@ trait Api[N[+_]]:
 
   extension (sc: StringContext) def native(s: N[Any]*): N[Any]
 
-  extension [A](a: A)
-    def lift: N[A]
+  extension [A](a: A) def lift: N[A]
 
 trait Queryable[R[_], M[_], N[+_]]
     extends Relational[[x] =>> Source[R, M, x]]
@@ -106,8 +105,7 @@ trait Context[R[_]]:
     exe(compile(query))
 
   inline def tried[A](inline query: Api ?=> A): Try[Exe[Read[A]]] =
-    tryCompile[A](query).map(exe)  
-
+    tryCompile[A](query).map(exe)
 
 final type Read[R[_], M[_], T] = T match
   case (k, grpd)       => (k, Read[R, M, grpd])
@@ -140,99 +138,35 @@ trait QueryContext[R[_], M[+_]] extends Context[R]:
       lazyList
   protected def exe[A](compiled: Native[A]): Exe[A] = Exe(compiled)
 
-trait ACID[C]:
+trait Acid[C]:
   def session(connection: C): C
   def open(connection: C): Unit
   def commit(connection: C): Unit
   def rollback(connection: C): Unit
 
-object ACID:
-end ACID
+object Acid:
+end Acid
 
-sealed class Transaction[T[_], C, A]
 object Transaction:
-  case class Conclusion[T[_], A](val run: () => T[A])
-      extends Transaction[T, Nothing, A]
-  case class Continuation[T[_], C](
-      protected val sessionFactory: () => C,
-      protected val open: C => T[Unit],
-      protected val commit: C => T[Unit],
-      protected val rollback: C => T[Unit],
-      protected val me: MonadError[T]
-  ) extends Transaction[T, C, Nothing]:
-    lazy val session = sessionFactory()
-
-  extension [C](connection: C)
+  extension [C, R](connection: C)
     def transaction[T[_]](using
-        acid: ACID[C],
+        acid: Acid[C],
         run: FromRunnable[T],
         me: MonadError[T]
-    ): Transaction[T, C, Nothing] =
-      Transaction.Continuation(
-        () => acid.session(connection),
-        c => run(() => acid.open(c)),
-        c => run(() => acid.commit(c)),
-        c => run(() => acid.rollback(c)),
-        me
-      )
-  extension [T[_], C](tr: Transaction[T, C, Nothing])
-    @scala.annotation.nowarn
-    final def apply[A](block: C ?=> T[A]): T[A] = tr match
-      case conn @ Continuation(_, open, commit, rollback, me) =>
-        given MonadError[T] = me
+    ): ContT[R, T, C] =
+      ContT.apply[R, T, C] { todo =>
         for
-          _ <- open(conn.session)
+          session <- run(() => acid.session(connection))
+          _ <- run(() => acid.open(session))
           thunk = for
-            r <- block(using conn.session)
-            _ <- commit(conn.session)
+            r <- todo(session)
+            _ <- run(() => acid.commit(session))
           yield r
           r <- thunk.recoverWith { e =>
             for
-              _ <- rollback(conn.session)
-              a <- me.raiseError[A](e)
+              _ <- run(() => acid.rollback(session))
+              a <- me.raiseError[R](e)
             yield a
           }
         yield r
-    final def map[A](f: C => T[A]): Transaction[T, Nothing, A] =
-      Conclusion(() => apply(s ?=> f(s)))
-    @scala.annotation.nowarn
-    final def withFilter(pred: C => Boolean): Transaction[T, C, Nothing] =
-      tr match
-        case conn @ Continuation(_, _, _, _, me) =>
-          pred(conn.session) match
-            case true => tr
-            case false =>
-              throw new NoSuchElementException(
-                "`Transaction.withFilter` predicate is not satisfied. Also, this method should not be called"
-              )
-    @scala.annotation.nowarn
-    final def flatMap[C2, A](
-        f: C => Transaction[T, C2, A]
-    ): Transaction[T, C2, A] = tr match
-      case conn @ Continuation(_, o1, c1, rb1, me) =>
-        given MonadError[T] = me
-        f(conn.session) match
-          case Conclusion(thunk) =>
-            Conclusion(() => apply(_ ?=> thunk()))
-          case Continuation(f2, o2, c2, rb2, _) =>
-            Continuation(
-              f2,
-              s2 =>
-                for
-                  _ <- o1(conn.session)
-                  _ <- o2(s2)
-                yield (),
-              s2 =>
-                for
-                  _ <- c2(s2)
-                  _ <- c1(conn.session)
-                yield (),
-              s2 =>
-                for
-                  _ <- rb2(s2)
-                  _ <- rb1(conn.session)
-                yield (),
-              me
-            )
-  extension [T[_], A](tr: Transaction[T, Nothing, A])
-    def run(): T[A] = tr.asInstanceOf[Transaction.Conclusion[T, A]].run()
+      }

@@ -4,7 +4,8 @@ import scala.quoted.*
 import graceql.*
 import graceql.core.*
 import graceql.context.memory.*
-import graceql.data.Source
+import graceql.syntax.*
+import graceql.data.*
 import scala.compiletime.summonInline
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -48,11 +49,11 @@ class MemorySpec extends AnyFlatSpec with should.Matchers {
 
   it should "execute any tree inside it as is" in {
     query[Eval, Seq] {
-      val seq = Seq(1,2,3).asSource
+      val seq = Seq(1, 2, 3).asSource
       for
         s <- seq.filter(_ => true).map(_ + 2)
         if s == s
-      yield s - 2 
+      yield s - 2
     }.run shouldBe Seq(1, 2, 3)
   }
 }
