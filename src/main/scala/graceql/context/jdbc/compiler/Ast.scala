@@ -585,7 +585,7 @@ class SqlParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
   def dropQuery: Parser[N] = kw.drop ~> kw.table ~> embedded.table ^^ {case t => DropTable(t)}
   def block: Parser[N] =
-    def written = rep1sep(query, kw.`;`) ^^ {
+    def written = rep1sep(query | expr, kw.`;`) ^^ {
       case Nil      => Block(Nil)
       case h +: Nil => h
       case l        => Block(l)
@@ -608,7 +608,7 @@ class SqlParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
         }
       case true => of ~ alias ^^ { case o ~ i => As(o, i) }
 
-  def sql: Parser[N] = block | query | expr
+  def sql: Parser[N] = expr | query | block
   def query: Parser[N] =
     createQuery| dropQuery | selectQuery // | updateQuery | deleteQuery | insertQuery
   def subquery: Parser[N] = parens(false)(
