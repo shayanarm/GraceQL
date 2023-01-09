@@ -88,8 +88,8 @@ trait CompilationFramework(using val q: Quotes) {
         v: State[S, A]
     ): ValidatedT[[x] =>> State[S, x], E, A] =
       ValidatedT[[x] =>> State[S, x], E, A](
-        summon[Monad[[x] =>> State[S, x]]].map(v)(a =>
-          summon[Monad[[x] =>> Validated[E, x]]].pure(a)
+        summon[Monad[[x] =>> State[S, x]]].map(v)(
+          summon[Monad[[x] =>> Validated[E, x]]].pure
         )
       )
 
