@@ -191,7 +191,7 @@ trait JdbcSpec[V, S[+X] <: Iterable[X]](
         }.run shouldEqual 1
     }
     
-    it should "select a simple arithmetic expression" in withConnection {
+    it should "compile, execute, and return the result of simple arithmetic expression as a select statement" in withConnection {
         vsql {
           native"${2.lift} + ${2.lift}".typed[Int]
         }.run shouldEqual 4

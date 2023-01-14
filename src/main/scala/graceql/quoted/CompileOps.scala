@@ -43,7 +43,7 @@ object CompileOps {
             case i@Ident(n) if i.symbol.name == name => wit
             case t                     => t
       }.transformTerm(block)(Symbol.spliceOwner)
-
+      
     val mapper = new TreeMap:
       override def transformTerm(term: Term)(owner: Symbol): Term =
         super.transformTerm(term)(owner) match

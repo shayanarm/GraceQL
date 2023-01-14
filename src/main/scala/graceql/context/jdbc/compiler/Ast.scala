@@ -504,14 +504,14 @@ class SqlParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
 
     def apply(v: Input): ParseResult[N] =
       def written =
-        def comutativeOL = 
+        def comutativeOffLim = 
           def lim = limit >> {l => success(Some(l)) ~ success(Option.empty[N])}
           def off = offset >> {o => success(Option.empty[N]) ~ success(Some(o))}
           def lo = limit ~ offset >> {case l ~ o => success(Some(l)) ~ success(Some(o)) }
           def ol = offset ~ limit >> {case o ~ l => success(Some(l)) ~ success(Some(o)) }
           def none = success(None) ~ success(None)
           lo | ol | lim | off | none
-        kw.select ~> kw.distinct.? ~ selectColumns ~ (kw.from ~> src) ~ rep(join) ~ where.? ~ groupBy.? ~ orderBy.? ~ comutativeOL ^^ {
+        kw.select ~> kw.distinct.? ~ selectColumns ~ (kw.from ~> src) ~ rep(join) ~ where.? ~ groupBy.? ~ orderBy.? ~ comutativeOffLim ^^ {
           case distinct ~ colset ~ from ~ joins ~ where ~ groupBy ~ orderBy ~ (limit ~ offset) =>
             Select(
               distinct.isDefined,
@@ -608,7 +608,7 @@ class SqlParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
         }
       case true => of ~ alias ^^ { case o ~ i => As(o, i) }
 
-  def sql: Parser[N] = expr | query | block
+  def sql: Parser[N] = block
   def query: Parser[N] =
     createQuery| dropQuery | selectQuery // | updateQuery | deleteQuery | insertQuery
   def subquery: Parser[N] = parens(false)(
@@ -791,8 +791,7 @@ class SqlParser[L[_], T[_]](val args: Array[Node[L, T]]) extends RegexParsers:
   def apply(src: String): Try[N] =
     parseAll(sql, src) match
       case Success(tree, _) => scala.util.Success(tree)
-      case Error(msg, i)    => scala.util.Failure(GraceException(msg))
-      case Failure(msg, i)  => scala.util.Failure(GraceException(msg))
+      case NoSuccess(msg, i) => scala.util.Failure(GraceException(msg))
 
 object SqlParser:
   enum kw(regex: String) extends Regex(regex):

@@ -4,9 +4,11 @@ import scala.quoted.*
 import graceql.core.*
 import graceql.syntax.*
 import graceql.context.jdbc.*
-import graceql.quoted.CompileOps
+import graceql.data.Eq
+import graceql.quoted.*
 import graceql.data.Kleisli
 import scala.util.Try
+import scala.reflect.Typeable
 
 type JdbcCompilationFramework = JdbcSchemaValidation
 
@@ -115,7 +117,7 @@ trait VendorTreeCompiler[V]:
           toDBIO[Read[[x] =>> Table[V, x], S, A]]
 
       require(pipe.run(expr))("Query compilation failed")
-
+      
     protected def typeCheck(tree: Node[Expr, Type]): Result[Node[Expr, Type]] =
       tree.transform.preM {
         case Node.CreateTable(t @ Node.Table(_, tpe), None) =>
