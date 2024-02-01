@@ -3,7 +3,7 @@ package graceql.context.jdbc.compiler
 import scala.quoted.*
 import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
-import graceql.quoted.CompileOps
+import graceql.quoted.TreeOps
 import graceql.syntax.*
 import graceql.data.{Validated, ~}
 import graceql.quoted.CompilationFramework

@@ -1,6 +1,7 @@
 package graceql
 
+import graceql.data.Eq
+
 package object quoted {
-  transparent inline def memoize(inline e: Any) : Any = 
-    ${Memoize.memoize('e)}
+
 }

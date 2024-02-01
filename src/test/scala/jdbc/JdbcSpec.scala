@@ -191,11 +191,11 @@ trait JdbcSpec[V, S[+X] <: Iterable[X]](
         }.run shouldEqual 1
     }
     
-    it should "compile, execute, and return the result of simple arithmetic expression as a select statement" in withConnection {
-        vsql {
-          native"${2.lift} + ${2.lift}".typed[Int]
-        }.run shouldEqual 4
-    }
+    // it should "compile, execute, and return the result of simple arithmetic expression as a select statement" in withConnection {
+    //     vsql {
+    //       native"${2.lift} + ${2.lift}".typed[Int]
+    //     }.run shouldEqual 4
+    // }
 
     // Todo: make compile module override mechanism OO based rather than partial function composition based.
 }

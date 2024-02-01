@@ -4,7 +4,7 @@ import scala.quoted.*
 import graceql.core.{Context => _, *}
 import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
-import graceql.quoted.CompileOps
+import graceql.quoted.TreeOps
 import scala.annotation.targetName
 
 class DdlSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):

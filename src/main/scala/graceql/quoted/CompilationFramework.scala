@@ -61,7 +61,7 @@ trait CompilationFramework(using val q: Quotes) {
   def preprocess[A](
       e: Expr[A]
   )(using ta: Type[A]): Expr[A] =
-    import graceql.quoted.CompileOps.*
+    import graceql.quoted.TreeOps.*
     val pipe =
       shrinkBlocks andThen
         inlineDefs andThen

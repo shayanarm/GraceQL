@@ -4,7 +4,7 @@ import scala.quoted.*
 import graceql.core.GraceException
 import scala.util.{Try, Success, Failure}
 
-object CompileOps {
+object TreeOps {
 
   def placeholder[A]: A = throw GraceException("All references to `placeholder` must be eliminated by the end of compilation!")
 

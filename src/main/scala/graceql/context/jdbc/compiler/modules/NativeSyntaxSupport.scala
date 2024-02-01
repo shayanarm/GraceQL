@@ -4,7 +4,7 @@ import scala.quoted.*
 import graceql.core.{Context => _, *}
 import graceql.context.jdbc.*
 import graceql.context.jdbc.compiler.*
-import graceql.quoted.CompileOps
+import graceql.quoted.TreeOps
 import scala.annotation.targetName
 import scala.util.Failure
 import scala.util.Success

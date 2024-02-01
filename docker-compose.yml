@@ -16,8 +16,8 @@ services:
     tty: true
     stdin_open: true
     environment:
-      MYSql_ROOT_PASSWORD: root
-      MYSql_DATABASE: testdb        
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: testdb        
   development:
     build:
       context: .

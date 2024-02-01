@@ -5,6 +5,7 @@
 .devcontainer
 .metals
 .vscode
+.idea
 target
 project/*
 !project/build.properties

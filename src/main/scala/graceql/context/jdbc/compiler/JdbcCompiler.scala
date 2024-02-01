@@ -29,7 +29,7 @@ trait VendorTreeCompiler[V]:
       ts: Type[S],
       tv: Type[V]
   ): Expr[Try[DBIO[Read[[x] =>> Table[V, x], S, A]]]] =
-    CompileOps.tryEval(compile[S, A](e))
+    TreeOps.tryEval(compile[S, A](e))
 
   def compile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
@@ -55,7 +55,7 @@ trait VendorTreeCompiler[V]:
       tv: Type[V],
       ts: Type[S]
   ) extends JdbcCompilationFramework(using q):
-    import CompileOps.*
+    import TreeOps.*
     import graceql.data.Validated
     import graceql.data.Validated.*
     import q.reflect.{
@@ -117,7 +117,7 @@ trait VendorTreeCompiler[V]:
           toDBIO[Read[[x] =>> Table[V, x], S, A]]
 
       require(pipe.run(expr))("Query compilation failed")
-      
+           
     protected def typeCheck(tree: Node[Expr, Type]): Result[Node[Expr, Type]] =
       tree.transform.preM {
         case Node.CreateTable(t @ Node.Table(_, tpe), None) =>
@@ -327,7 +327,7 @@ trait VendorTreeCompiler[V]:
 class Context(
     val refMap: Map[Any, String] = Map.empty[Any, String]
 ):
-  import CompileOps.placeholder
+  import TreeOps.placeholder
   def withRegisteredIdent[A](using q: Quotes, ta: Type[A])(
       name: String
   ): (Context, Expr[A]) =
@@ -338,7 +338,7 @@ class Context(
   def literalEncodable(using q: Quotes)(expr: Expr[Any]): Boolean =
     import q.reflect.*
     var encountered = false
-    val symbol = Symbol.requiredMethod("graceql.quoted.CompileOps.placeholder")
+    val symbol = Symbol.requiredMethod("graceql.quoted.TreeOps.placeholder")
     new q.reflect.TreeTraverser {
       override def traverseTree(tree: q.reflect.Tree)(owner: Symbol): Unit =
         tree match

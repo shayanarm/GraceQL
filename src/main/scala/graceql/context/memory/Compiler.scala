@@ -3,7 +3,7 @@ package graceql.context.memory
 import scala.quoted.*
 import graceql.core.*
 import scala.util.Try
-import graceql.quoted.CompileOps
+import graceql.quoted.TreeOps
 
 object Compiler {
   def tryCompile[R[_], M[_], A](e: Expr[A])(using
@@ -11,7 +11,7 @@ object Compiler {
       tr: Type[R],
       tm: Type[M],
       ta: Type[A]
-  ): Expr[Try[() => A]] = CompileOps.tryEval(compile[R, M, A](e))
+  ): Expr[Try[() => A]] = TreeOps.tryEval(compile[R, M, A](e))
   def compile[R[_], M[_], A](e: Expr[A])(using
       q: Quotes,
       tr: Type[R],
