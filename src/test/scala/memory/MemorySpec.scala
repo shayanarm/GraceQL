@@ -44,7 +44,7 @@ class MemorySpec extends AnyFlatSpec with should.Matchers {
   }
   it should "not allow typing on native syntax" in {
     query[IterRef, Seq].tried {
-      (() => "sdf").typed[Int]
+      (native"sdf").typed[Int]
     }.isFailure shouldBe true
   }
 

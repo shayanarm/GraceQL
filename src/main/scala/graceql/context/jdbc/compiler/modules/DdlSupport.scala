@@ -24,14 +24,14 @@ class DdlSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type
             ($c: Q).delete(
               $table: Table[V, a]
             )()
-          } => recurse(ctx)(withImplicit(c)('{ _ ?=>
-            native"drop table ${$table.lift}".unlift
-          }))
+          } => for {
+            t <- recurse(ctx)(table)
+          } yield Node.DropTable(t)
       case '{
             ($c: Q).create(
               $table: Table[V, a]
             )()
-          } => recurse(ctx)(withImplicit(c)('{ _ ?=>
-            native"create table ${$table.lift}".unlift
-          }))
+          } => for {
+            t <- recurse(ctx)(table)
+          } yield Node.CreateTable(t, None)
     }

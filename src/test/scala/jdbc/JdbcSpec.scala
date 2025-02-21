@@ -164,7 +164,7 @@ trait JdbcSpec[V, S[+X] <: Iterable[X]](
 
     // s"""
     // The high-level JDBC context for $vendor on INSERT commands
-    // """ should "insert a single literal record ito a table" in withConnection {
+    // """ should "insert a single literal record into a table" in withConnection {
     //     val row = Record1(0, "foo")
     //     vsql {
     //       record1s.create()

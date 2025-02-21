@@ -41,15 +41,14 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
         yield tail match
             case Node.Block(ns) => Node.Block(head :: ns)
             case n => Node.Block(List(head, n))              
-      case '{
-            ($c: Q).unlift(
-              $block: DBIO[a]
-            )
-          } =>
-        recurse(ctx)(block)
-      case '{ $dbio: DBIO[a] } =>
-        dbio match
-          case '{ ($c: Q).lift($a: t) } => recurse(ctx)(a)
+      case '{ $raw: Raw } =>
+        raw match
+          case '{ ($c: Q).lift($a: t) } => for {
+            n <- recurse(ctx)(a)
+            _ <- n match 
+              case Node.Literal(_) => ().pure[Result]
+              case n => s"Lifted value must be a literal node. Received: $n".err
+          } yield n
           case '{
                 ($c: Q).native($sc: StringContext)(${
                   Varargs(args)
@@ -60,7 +59,7 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
               parsed <- parseNative(nativeArgs)(sc)
             yield parsed
           case '{
-                ($c: Q).typed($native: DBIO[a]): DBIO[b]
+                ($c: Q).typed($native: Raw): b
               } =>
             recurse(ctx)(native).map(r => Node.TypeAnn(r, Type.of[b]))
           case e =>
@@ -76,7 +75,5 @@ class NativeSyntaxSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes,
         StringContext(parts*)
       case '{ new StringContext(${ Varargs(Exprs(parts)) }: _*) } =>
         StringContext(parts*)
-    Node.parse(sc)(args) match
-      case Failure(exception) => s"Sql Tree parse error: ${exception.getMessage()}".err
-      case Success(value) => value.pure
+    Node.Raw(sc, args.toList).pure
     

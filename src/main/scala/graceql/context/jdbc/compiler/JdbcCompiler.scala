@@ -22,7 +22,7 @@ trait VendorTreeCompiler[V]:
   ): Delegate[S] = new Delegate[S]
 
   def tryCompile[S[+X] <: Iterable[X], A](
-      e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
+      e: Expr[Queryable[[x] =>> Table[V, x], S] ?=> A]
   )(using
       q: Quotes,
       ta: Type[A],
@@ -32,7 +32,7 @@ trait VendorTreeCompiler[V]:
     TreeOps.tryEval(compile[S, A](e))
 
   def compile[S[+X] <: Iterable[X], A](
-      e: Expr[Queryable[[x] =>> Table[V, x], S, DBIO] ?=> A]
+      e: Expr[Queryable[[x] =>> Table[V, x], S] ?=> A]
   )(using
       q: Quotes,
       ta: Type[A],
@@ -41,7 +41,7 @@ trait VendorTreeCompiler[V]:
   ): Expr[DBIO[Read[[x] =>> Table[V, x], S, A]]] =
     import q.reflect.{Statement => _, *}
     e match
-      case '{ (c: Queryable[[X] =>> Table[V, X], S, DBIO]) ?=> $body(c): A } =>
+      case '{ (c: Queryable[[X] =>> Table[V, X], S]) ?=> $body(c): A } =>
         delegate[S].compile[A](body)
 
   protected def binary(recurse: Node[Expr, Type] => Expr[String])(using
@@ -69,8 +69,8 @@ trait VendorTreeCompiler[V]:
     type Requirements = SchemaRequirements
     val require = new SchemaRequirements {}
 
-    type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
-    given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
+    type Q = Queryable[[x] =>> Table[V, x], S]
+    given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S]]
 
     private class NameGenerator(private val prefix: String):
       private var counter = 1
@@ -363,8 +363,8 @@ abstract class CompileModule[V, S[+X] <: Iterable[X]](using
 
   import q.reflect.*
 
-  type Q = Queryable[[x] =>> Table[V, x], S, DBIO]
-  given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S, DBIO]]
+  type Q = Queryable[[x] =>> Table[V, x], S]
+  given Type[Q] = Type.of[Queryable[[x] =>> Table[V, x], S]]
 
   type Requirements = SchemaRequirements
   val require = new SchemaRequirements {}

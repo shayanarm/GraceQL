@@ -23,7 +23,7 @@ object Compiler {
       override def traverseTree(tree: Tree)(owner: Symbol): Unit =
         tree match
           case Select(i, call)
-              if i.tpe <:< TypeRepr.of[Queryable[R, M, [x] =>> () => x]] =>
+              if i.tpe <:< TypeRepr.of[Queryable[R, M]] =>
             call match
               case "create" =>
                 throw GraceException(
@@ -38,6 +38,10 @@ object Compiler {
                   "`in-memory` contexts do not support native syntax"
                 )
               case "typed" =>
+                throw GraceException(
+                  "`in-memory` contexts do not support native syntax"
+                )
+              case "lift" =>
                 throw GraceException(
                   "`in-memory` contexts do not support native syntax"
                 )

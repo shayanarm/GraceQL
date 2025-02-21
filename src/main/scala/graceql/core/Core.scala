@@ -42,31 +42,32 @@ class Exe[R[_], N[+_], C, A](val compiled: N[A]):
   inline def either(using C): Either[Throwable, A] =
     as[[x] =>> Either[Throwable, x]]
 
-trait Api[N[+_]]:
-  extension [A](bin: N[A])
-    def typed[B]: N[B]
-    def unlift: A
 
-  extension (sc: StringContext) def native(s: N[Any]*): N[Any]
+sealed trait Raw    
 
-  extension [A](a: A) def lift: N[A]
+trait Api:
+  extension (bin: Raw)
+    def typed[A]: A
+
+  extension [A](a: A) def lift: Raw
+  extension (sc: StringContext) def native(s: Raw*): Raw
 
   object function:
 
-    inline def nullary[A](inline f: N[Any]): () => A = 
-      () => f.typed[A].unlift
-    inline def unary[A, B](inline f: N[A] => N[Any]): A => B = 
-      a => f(a.lift).typed[B].unlift
-    inline def binary[A1, A2, B](inline f: (N[A1], N[A2]) => N[Any]): (A1, A2) => B = 
-      (a1, a2) => f(a1.lift, a2.lift).typed[B].unlift
-    inline def ternary[A1, A2, A3, B](inline f: (N[A1], N[A2], N[A3]) => N[Any]): (A1, A2, A3) => B =
-      (a1, a2, a3) => f(a1.lift, a2.lift, a3.lift).typed[B].unlift
-    inline def quarternary[A1, A2, A3, A4, B](inline f: (N[A1], N[A2], N[A3], N[A4]) => N[Any]): (A1, A2, A3, A4) => B =
-      (a1, a2, a3, a4) => f(a1.lift, a2.lift, a3.lift, a4.lift).typed[B].unlift  
+    inline def nullary[A](inline f: Raw): () => A = 
+      () => f.typed[A]
+    inline def unary[A, B](inline f: Raw => Raw): A => B = 
+      a => f(a.lift).typed[B]
+    inline def binary[A1, A2, B](inline f: (Raw, Raw) => Raw): (A1, A2) => B = 
+      (a1, a2) => f(a1.lift, a2.lift).typed[B]
+    inline def ternary[A1, A2, A3, B](inline f: (Raw, Raw, Raw) => Raw): (A1, A2, A3) => B =
+      (a1, a2, a3) => f(a1.lift, a2.lift, a3.lift).typed[B]
+    inline def quarternary[A1, A2, A3, A4, B](inline f: (Raw, Raw, Raw, Raw) => Raw): (A1, A2, A3, A4) => B =
+      (a1, a2, a3, a4) => f(a1.lift, a2.lift, a3.lift, a4.lift).typed[B]
 
-trait Queryable[R[_], M[_], N[+_]]
+trait Queryable[R[_], M[_]]
     extends Relational[[x] =>> Source[R, M, x]]
-    with Api[N]:
+    with Api:
   extension [A](values: M[A])
     @targetName("valuesAsSource")
     inline def asSource: Source[R, M, A] = Source.Values(values)
@@ -128,7 +129,7 @@ final type Read[R[_], M[_], T] = T match
 trait QueryContext[R[_], M[+_]] extends Context[R]:
   self =>
 
-  final type Queryable = graceql.core.Queryable[R, M, Native]
+  final type Queryable = graceql.core.Queryable[R, M]
   final type Api = Queryable
 
   final type Read[T] = graceql.core.Read[R, M, T]

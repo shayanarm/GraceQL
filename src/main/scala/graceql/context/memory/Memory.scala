@@ -34,17 +34,16 @@ trait MemoryQueryContextProvider[R[_]]:
           case Source.Values(c) => c
           case Source.Ref(mem)  => refToIterable[A, S](mem)
 
-  given memoryQueryable[S[+X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S, [x] =>> () => x] with {
+  given memoryQueryable[S[+X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S] with {
     type Src[A] = Source[R, S, A]
 
-    extension[A](bin: () => A)
-      def typed[B]: () => B = notSupported()
-      inline def unlift: A = bin()
+    extension(raw: Raw)
+      def typed[A]: A = notSupported()
     extension[A](a: A)
-      inline def lift: () => A = () => a
+      def lift: Raw = notSupported()
 
     extension(sc: StringContext)
-      def native(s: (() => Any)*): () => Any = notSupported()
+      def native(s: Raw*): Raw = notSupported()
 
     extension [A](ma: Src[A])
       private inline def mapValues[B](f: S[A] => S[B]): Src[B] =
@@ -137,7 +136,7 @@ trait MemoryQueryContextProvider[R[_]]:
       def delete() : Unit = notSupported()
   }
 
-  given memoryQueryContext[S[+X] <: Iterable[X]](using sl: Queryable[R, S, [x] =>> () => x], ifac: IterableFactoryWrapper[S]): QueryContext[R, S] with
+  given memoryQueryContext[S[+X] <: Iterable[X]](using sl: Queryable[R, S], ifac: IterableFactoryWrapper[S]): QueryContext[R, S] with
     type Native[A] = () => A
     type Connection = DummyImplicit
 
