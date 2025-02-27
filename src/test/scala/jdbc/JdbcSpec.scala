@@ -290,4 +290,4 @@ object JdbcSpec:
   @schema(name="record17s", compositeUniqueKey= "field1", "invalid", "field3")
   case class Record17(
       field1: Int, field2: Int, field3: Int
-  ) derives SqlRow  
+  ) derives SqlRow

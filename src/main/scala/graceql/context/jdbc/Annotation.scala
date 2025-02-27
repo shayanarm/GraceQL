@@ -43,6 +43,34 @@ object fk:
         case _ => None
 
 @field
+case class sqlType(
+    vendor: Class[_] | Type[_],
+    colType: String,
+) extends modifier
+object sqlType:
+  given FromExpr[fk] with
+    def unapply(expr: Expr[fk])(using q: Quotes): Option[fk] =
+      import q.reflect.*
+      inline def targetType(e: Expr[Class[_] | Type[_]]): Type[_] =
+        e match
+          case '{$x: Class[a]} => Type.of[a]
+          case _ =>
+            throw GraceException(
+              "Using `scala.quoted.Type.of` for the foreign-key reference table type" + 
+              "annotation is reserved for the compiler. Provide type annotation using `classOf`"
+            )
+
+      expr match
+        case '{ fk($c, ${ Expr(r) }) } => Some(fk(targetType(c), r))
+        case '{ new graceql.context.jdbc.fk($c, ${ Expr(r) }) } =>
+          Some(fk(targetType(c), r))
+        case '{ fk($c, ${ Expr(r) }, ${ Expr(d) }) } =>
+          Some(fk(targetType(c), r, d))
+        case '{ new graceql.context.jdbc.fk($c, ${ Expr(r) }, ${ Expr(d) }) } =>
+          Some(fk(targetType(c), r, d))
+        case _ => None
+
+@field
 class autoinc extends modifier
 object autoinc:
   given FromExpr[autoinc] with
@@ -104,4 +132,4 @@ object schema:
           Some(schema(value))
         case '{ graceql.context.jdbc.schema(${ Expr(value) }) } =>
           Some(schema(value))
-        case _ => None
+        case _ => None        

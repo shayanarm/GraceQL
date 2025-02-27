@@ -2,6 +2,7 @@ package graceql.context.jdbc
 
 import graceql.core.*
 import java.sql.{Connection => JConnection, ResultSet}
+import java.sql.PreparedStatement
 
 final case class Table[V, +A]()
 
@@ -54,4 +55,17 @@ trait JdbcQueryContext[V, S[+X] <: Iterable[X]]
 
   final type Native[+A] = DBIO[A]
 
-  final type Connection = JConnection      
+  final type Connection = JConnection
+
+
+trait SqlColumnType[V, T]: 
+  val name: String
+  def read(rs: ResultSet, idx: Int): T
+  def write(stmt: PreparedStatement, idx: Int, value: T): Unit
+
+
+object SqlColumnType:
+  given mapped[V, A, B](using ev: SqlMapped[A, B], ta: SqlColumnType[V, A]): SqlColumnType[V, B] with
+    val name = ta.name
+    def read(rs: ResultSet, idx: Int): B = ev.from(ta.read(rs, idx))
+    def write(stmt: PreparedStatement, idx: Int, value: B): Unit = ta.write(stmt, idx, ev.to(value))

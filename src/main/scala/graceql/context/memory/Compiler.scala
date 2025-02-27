@@ -37,14 +37,6 @@ object Compiler {
                 throw GraceException(
                   "`in-memory` contexts do not support native syntax"
                 )
-              case "typed" =>
-                throw GraceException(
-                  "`in-memory` contexts do not support native syntax"
-                )
-              case "lift" =>
-                throw GraceException(
-                  "`in-memory` contexts do not support native syntax"
-                )
               case _ => super.traverseTree(tree)(owner)
           case _ => super.traverseTree(tree)(owner)
     }.traverseTree(e.asTerm)(Symbol.spliceOwner)

@@ -9,17 +9,17 @@ import graceql.typelevel.*
 import scala.quoted.*
 import scala.util.Try
 
-object Row
-object Base
-sealed class Mapped[A, B](val from: A => B, val to: B => A)
-object ValueClass
-object JsonADT
-object JsonArray
+sealed class Row
+sealed class Base
+sealed class Mapped
+sealed class ValueClass
+// sealed class JsonADT
+// sealed class JsonArray
 
-type Column = Base.type | Mapped[_ <: Any,_ <: Any] | ValueClass.type | JsonADT.type | JsonArray.type
-type Encodings = Row.type | Column
+type Column = Base | Mapped | ValueClass // | JsonADT | JsonArray
+type Encodings = Row | Column
 
-abstract class SqlEncoding[A, E <: Encodings](val encoding: E):
+abstract class SqlEncoding[A, E <: Encodings]:
   final type Encoding = E
 
 object SqlEncoding:
@@ -44,20 +44,21 @@ object SqlEncoding:
   given SqlBase[Unit] with {}    
   given SqlBase[java.sql.Date] with {}
       
-  given option[A, E <: Encodings](using ta: SqlEncoding[A, E]): SqlEncoding[Option[A], E](ta.encoding) with {}
-  given tuples[T <: Tuple]: SqlEncoding[T, Row.type](Row) with {}
+  given option[A, E <: Encodings](using ta: SqlEncoding[A, E]): SqlEncoding[Option[A], E] with {}
+  given tuples[T](using ev: T <:< Tuple): SqlEncoding[T, Row] with {}
 
-abstract class SqlBase[A] extends SqlEncoding[A, Base.type](Base)
+abstract class SqlBase[A] extends SqlEncoding[A, Base]
 object SqlBase
 
-abstract class SqlMapped[A, B](encoding: Mapped[A, B])(using ta: SqlEncoding[A, _])(using ev: ta.Encoding <:< Column) extends SqlEncoding[A, Mapped[A, B]](encoding)
+trait SqlMapped[A, B](using ta: SqlEncoding[A, _], ev: ta.Encoding <:< Column) extends SqlEncoding[A, Mapped]:
+  final type From = A
+  def from(a: A): B
+  def to(b: B): A
 
 object SqlMapped:
-  def apply[A, B](_from: A => B, _to: B => A)(using ta: SqlEncoding[A, _])(using
-      ev: ta.Encoding <:< Column
-  ): SqlMapped[A, B] = new SqlMapped[A, B](Mapped(_from,_to)) {}
+  type To[B] = SqlMapped[_, B]
 
-abstract class SqlValueClass[O <: Product] extends SqlEncoding[O, ValueClass.type](ValueClass) {
+abstract class SqlValueClass[O <: Product] extends SqlEncoding[O, ValueClass] {
   type Inner
   protected val m: Mirror.ProductOf[O] {type MirroredElemTypes = Inner *: EmptyTuple}
   protected val ev: SqlEncoding[Inner,_]#Encoding <:< Column
@@ -72,7 +73,7 @@ object SqlValueClass:
     val ev: SqlEncoding[Inner,_]#Encoding <:< Column = ev0.asInstanceOf[SqlEncoding[Inner,_]#Encoding <:< Column]
   }
   
-abstract class SqlRow[A <: Product](using ev: Mirror.ProductOf[A]) extends SqlEncoding[A, Row.type](Row)
+abstract class SqlRow[A <: Product](using ev: Mirror.ProductOf[A]) extends SqlEncoding[A, Row]
 
 object SqlRow:
   given derived[P <: Product](using ev: Mirror.ProductOf[P]): SqlRow[P] with {}
@@ -246,21 +247,21 @@ object SqlMirror:
         def mirrorToList(a: M): List[Option[Any]] = sqlTup.mirrorToList(a)
   }
 
-  given mapped[A, B, M](using mppd: SqlMapped[A,B], ta: SqlMirror[A, M]): SqlMirror[B, M] with
+  given mapped[A, B, M](using mppd: SqlMapped[A, B], ta: SqlMirror[A, M]): SqlMirror[B, M] with
 
     final def isTuple: Boolean = false
 
     def arity = 1
 
-    final def to(a: B): M = ta.to(mppd.encoding.to(a))
+    final def to(a: B): M = ta.to(mppd.to(a))
 
-    final def from(m: M): B = mppd.encoding.from(ta.from(m))
+    final def from(m: M): B = mppd.from(ta.from(m))
 
     final protected def listToMirror(r: List[Option[Any]]): M = ta.listToMirror(r)
     
     final def mirrorToList(m: M): List[Option[Any]] = ta.mirrorToList(m)
 
-  given valueClass[O <: Product, I, M](using vc: SqlValueClass[O], ti: SqlMirror[vc.Inner, M]): SqlMirror[O, M] with
+  given valueClass[O <: Product, M](using vc: SqlValueClass[O], ti: SqlMirror[vc.Inner, M]): SqlMirror[O, M] with
     final def to(o: O): M = ti.to(vc.unbox(o))
     final def from(m: M): O = vc.box(ti.from(m))
 

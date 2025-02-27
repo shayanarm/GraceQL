@@ -7,31 +7,27 @@ import graceql.context.jdbc.compiler.*
 import graceql.quoted.TreeOps
 import scala.annotation.targetName
 
-class DdlSupport[V, S[+X] <: Iterable[X]](using override val q: Quotes, tv: Type[V], ts: Type[S]) extends CompileModule[V, S](using q, tv, ts):
-  def apply(
-      recurse: Context => Expr[Any] => Result[Node[Expr, Type]],
-      nameGen: () => String
-  )(ctx: Context): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
+trait DdlSupport[V, S[+X] <: Iterable[X]] extends CompileModule[V, S]:
+  abstract override def comp(using ctx: Context): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
     import q.reflect.{
       Select => _,
       Block => _,
       Literal => SLiteral,
       *
     }
-
-    {
+    super.comp.orElse {
       case '{
             ($c: Q).delete(
               $table: Table[V, a]
             )()
           } => for {
-            t <- recurse(ctx)(table)
+            t <- comp(table)
           } yield Node.DropTable(t)
       case '{
             ($c: Q).create(
               $table: Table[V, a]
             )()
           } => for {
-            t <- recurse(ctx)(table)
-          } yield Node.CreateTable(t, None)
+            t <- comp(table)
+          } yield Node.CreateTable(t, None) 
     }

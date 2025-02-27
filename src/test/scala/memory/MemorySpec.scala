@@ -42,11 +42,6 @@ class MemorySpec extends AnyFlatSpec with should.Matchers {
       native"foo"
     }.isFailure shouldBe true
   }
-  it should "not allow typing on native syntax" in {
-    query[IterRef, Seq].tried {
-      (native"sdf").typed[Int]
-    }.isFailure shouldBe true
-  }
 
   it should "execute any tree inside it as is" in {
     val seq = Seq(1, 2, 3)

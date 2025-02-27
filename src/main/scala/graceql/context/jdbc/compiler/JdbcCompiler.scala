@@ -9,6 +9,10 @@ import graceql.quoted.*
 import graceql.data.Kleisli
 import scala.util.Try
 import scala.reflect.Typeable
+import graceql.data.Validated
+import graceql.data.Validated.*
+import graceql.context.jdbc.compiler.modules.DdlSupport
+import graceql.context.jdbc.compiler.modules.NativeSyntaxSupport
 
 type JdbcCompilationFramework = JdbcSchemaValidation
 
@@ -19,7 +23,7 @@ trait VendorTreeCompiler[V]:
       Quotes,
       Type[V],
       Type[S]
-  ): Delegate[S] = new Delegate[S]
+  ): CompilerDelegate[S] = new CompilerDelegate[S]
 
   def tryCompile[S[+X] <: Iterable[X], A](
       e: Expr[Queryable[[x] =>> Table[V, x], S] ?=> A]
@@ -44,20 +48,205 @@ trait VendorTreeCompiler[V]:
       case '{ (c: Queryable[[X] =>> Table[V, X], S]) ?=> $body(c): A } =>
         delegate[S].compile[A](body)
 
-  protected def binary(recurse: Node[Expr, Type] => Expr[String])(using
-      Quotes
-  ): PartialFunction[Node[Expr, Type], Expr[String]]
+  protected def binary(using
+      q: Quotes
+  )(tree: Node[Expr, Type]): Expr[String] =
+    import Node.*
+    import q.reflect.{
+      Tree => _,
+      Select => _,
+      Block => _,
+      Literal => SLiteral,
+      Symbol => _,
+      Ref => _,
+      *
+    }
+    tree match {
+      case DropTable(table) => '{ "DROP TABLE " + ${ binary(table) } }
+      case CreateTable(table, Some(specs)) =>
+        val specStrings = specs.map {
+          case CreateSpec.ColDef(colName, tpe, mods) =>
+            val modStrings = mods.map {
+              case ColMod.AutoInc() => '{ "AUTO_INCREMENT" }
+              case ColMod.Default(v) =>
+                '{ "DEFAULT " + ${ binary(Node.Literal(v)) } }
+              case ColMod.NotNull() => '{ "NOT NULL" }
+              case ColMod.Unique()  => '{ "UNIQUE" }
+            }
+            '{
+              ${ Expr(colName) } + " " + ${ typeString(tpe) } + ${
+                Expr.ofList(modStrings)
+              }.mkString(" ", " ", "")
+            }
+          case CreateSpec.PK(columns) =>
+            '{ "PRIMARY KEY (" + ${ Expr(columns.mkString(", ")) } + ")" }
+          case CreateSpec.FK(
+                localCol,
+                remoteTableName,
+                remoteColName,
+                onDelete
+              ) =>
+            val onDeleteStr = onDelete match
+              case OnDelete.Cascade    => '{ "CASCADE" }
+              case OnDelete.Restrict   => '{ "RESTRICT" }
+              case OnDelete.SetDefault => '{ "SET DEFAULT" }
+              case OnDelete.SetNull    => '{ "SET NULL" }
+            '{
+              "FOREIGN KEY (" + ${
+                Expr(localCol)
+              } + ") REFERENCES " + $remoteTableName + "(" + ${
+                Expr(remoteColName)
+              } + ") ON DELETE " + $onDeleteStr
+            }
+          case CreateSpec.Index(indices) =>
+            val indexStrings = indices.map {
+              case (c, Order.Asc)  => '{ ${ Expr(c) } + " ASC" }
+              case (c, Order.Desc) => '{ ${ Expr(c) } + " DESC" }
+            }
+            '{
+              "INDEX (" + ${ Expr.ofList(indexStrings) }
+                .mkString(", ") + ")"
+            }
+          case CreateSpec.Uniques(indices) =>
+            val compUniques = indices.map(Expr(_))
+            '{
+              "UNIQUE (" + ${ Expr.ofList(compUniques) }
+                .mkString(", ") + ")"
+            }
+        }
+
+        '{
+          "CREATE TABLE " + ${ binary(table) } + " (" + ${
+            Expr.ofList(specStrings)
+          }.mkString(", ") + ")"
+        }
+      case Select(
+            distinct,
+            columns,
+            from,
+            joins,
+            where,
+            groupBy,
+            orderBy,
+            offset,
+            limit
+          ) =>
+        val distinctWords = if distinct then List('{ "DISTINCT" }) else Nil
+        val columnsWords = List(binary(columns))
+        val fromWords = from match
+          case sub @ As(s: Select[_, _], name) =>
+            List('{ "(" + ${ binary(s) } + ")" }, '{ "AS" }, Expr(name))
+          case sub: Select[_, _] =>
+            List('{ "(" + ${ binary(from) } + ")" })
+          case i => List(binary(i))
+        val joinWords = joins.map { case (jt, src, on) =>
+          val jtStr = jt match
+            case JoinType.Inner => "INNER"
+            case JoinType.Left  => "LEFT"
+            case JoinType.Right => "RIGHT"
+            case JoinType.Full  => "FULL"
+            case JoinType.Cross => "CROSS"
+          List(
+            Expr(jtStr),
+            Expr("JOIN"),
+            binary(src),
+            Expr("ON"),
+            binary(on)
+          )
+        }.flatten
+        val whereWords = where.fold(Nil)(i => List('{ "WHERE" }, binary(i)))
+        val groupByWords = groupBy.fold(List.empty) { case (cs, h) =>
+          List(Expr("GROUP"), Expr("BY"), binary(cs)) ++ h
+            .map(binary)
+            .toList
+        }
+        val orderByWords = orderBy match
+          case Nil => Nil
+          case cs =>
+            val ord = cs.map {
+              case (c, Order.Asc)  => '{ ${ binary(c) } + " ASC" }
+              case (c, Order.Desc) => '{ ${ binary(c) } + " DESC" }
+            }
+            List(
+              Expr("ORDER"),
+              Expr("BY"),
+              '{ ${ Expr.ofSeq(ord) }.mkString(", ") }
+            )
+        val limitWords =
+          limit.fold(List.empty)(l => List(Expr("LIMIT"), binary(l)))
+        val offsetWords =
+          offset.fold(List.empty)(o => List(Expr("OFFSET"), binary(o)))
+        val words =
+          List('{ "SELECT" }) ++ distinctWords ++ columnsWords ++ List('{
+            "FROM"
+          }) ++ fromWords ++ joinWords ++ whereWords ++ groupByWords ++ orderByWords ++ limitWords ++ offsetWords
+
+        '{ ${ Expr.ofList(words) }.mkString(" ") }
+      case Block(stmts) =>
+        '{
+          ${ Expr.ofSeq(stmts.map(binary)) }.map(q => s"$q;").mkString(" ")
+        }
+      case Star() => '{ "*" }
+      case Tuple(trees) =>
+        '{ ${ Expr.ofSeq(trees.map(binary)) }.mkString(", ") }
+      case As(tree, name) =>
+        '{ ${ binary(tree) } + " AS " + ${ Expr(name) } }
+      case Ref(name)       => Expr(name)
+      case Column(name)    => Expr(name)
+      case SelectCol(n, c) => '{ ${ binary(n) } + "." + ${ binary(c) } }
+      case Table(name, _)  => name
+      case Literal(value) =>
+        value.asExprOf[scala.Any] match
+          case '{ $o: Option[a] } =>
+            '{ $o.fold("NULL") { i => ${ binary(Literal('{ i })) } } }
+          case '{ $i: String } => '{ "\"" + $i + "\"" }
+          case v               => '{ $v.toString }
+      case FunApp(func, args, _) =>
+        val encodedArgs = args.map { a =>
+          a match
+            case Literal(_) | SelectCol(_, _) | FunApp(Func.Custom(_), _, _) |
+                Star() =>
+              binary(a)
+            case _ => '{ "(" + ${ binary(a) } + ")" }
+        }
+        (func, encodedArgs) match
+          case (Func.BuiltIn(Symbol.Eq), List(l, r)) =>
+            '{ $l + " = " + $r }
+          case (Func.BuiltIn(Symbol.Neq), List(l, r)) =>
+            '{ $l + " != " + $r }
+          case (Func.BuiltIn(Symbol.Plus), List(l, r)) =>
+            '{ $l + " + " + $r }
+          case (Func.BuiltIn(Symbol.Minus), List(l, r)) =>
+            '{ $l + " - " + $r }
+          case (Func.BuiltIn(Symbol.Plus), List(l)) =>
+            l
+          case (Func.BuiltIn(Symbol.Minus), List(l)) =>
+            '{ "-" + $l }
+          case (Func.BuiltIn(Symbol.Mult), List(l, r)) =>
+            '{ $l + " * " + $r }
+          case (Func.BuiltIn(Symbol.And), List(l, r)) =>
+            '{ $l + " AND " + $r }
+          case (Func.BuiltIn(Symbol.Or), List(l, r)) =>
+            '{ $l + " OR " + $r }
+          case (Func.BuiltIn(Symbol.Count), List(arg)) =>
+            '{ "COUNT(" + $arg + ")" }
+          case (Func.Custom(name), as) =>
+            '{
+              ${ Expr(name) } + "(" + ${ Expr.ofSeq(as) }
+                .mkString(", ") + ")"
+            }
+      case Cast(n, tpe) =>
+        '{ "CAST(" + ${ binary(n) } + " AS " + ${ typeString(tpe) } + ")" }
+    }
 
   def typeString[A](using q: Quotes)(tpe: Type[A]): Expr[String]
 
-  class Delegate[S[+X] <: Iterable[X]](using
+  class CompilerDelegate[S[+X] <: Iterable[X]](using
       override val q: Quotes,
       tv: Type[V],
       ts: Type[S]
   ) extends JdbcCompilationFramework(using q):
     import TreeOps.*
-    import graceql.data.Validated
-    import graceql.data.Validated.*
     import q.reflect.{
       Tree => _,
       Select => _,
@@ -82,26 +271,21 @@ trait VendorTreeCompiler[V]:
         }
     private val nameGen = NameGenerator("x")
 
-    val partials: Seq[CompileModule[V, S]] = Seq(
-      modules.NativeSyntaxSupport[V, S],
-      modules.DdlSupport[V, S]
-    )
+    val compiler = new CompileModule[V, S](nextName = nameGen.nextName)
+      with DdlSupport[V, S]
+      with NativeSyntaxSupport[V, S]
 
     def compile[A](expr: Expr[Q => A])(using
         ta: Type[A]
     ): Expr[DBIO[Read[[x] =>> Table[V, x], S, A]]] =
 
-      val fallback: PartialFunction[Expr[Any], Result[Node[Expr, Type]]] = {
-        case e =>
-          s"""Unsupported operation!
-          |${e.asTerm.show(using Printer.TreeAnsiCode)}
-          |${e.asTerm.show(using Printer.TreeStructure)}""".stripMargin.err
-      }
       def toNative(
           ctx: Context
       ): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
-        partials.foldRight(fallback) { (i, c) =>
-          i(toNative, nameGen.nextName)(ctx).orElse(c)
+        compiler.comp(using ctx).orElse { case e =>
+          s"""Unsupported operation!
+          |${e.asTerm.show(using Printer.TreeAnsiCode)}
+          |${e.asTerm.show(using Printer.TreeStructure)}""".stripMargin.err
         }
 
       def prep(e: Expr[Q => A]): Result[Expr[A]] =
@@ -117,7 +301,7 @@ trait VendorTreeCompiler[V]:
           toDBIO[Read[[x] =>> Table[V, x], S, A]]
 
       require(pipe.run(expr))("Query compilation failed")
-           
+
     protected def typeCheck(tree: Node[Expr, Type]): Result[Node[Expr, Type]] =
       tree.transform.preM {
         case Node.CreateTable(t @ Node.Table(_, tpe), None) =>
@@ -141,188 +325,6 @@ trait VendorTreeCompiler[V]:
           '{ DBIO.Pure[A](() => ${ v.asExprOf[A] }) }
         case _ =>
           '{ DBIO.Query(${ binary(tree) }, (rs) => ???) }
-
-    protected final def binary(tree: Node[Expr, Type]): Expr[String] =
-      import Node.*
-      self
-        .binary(binary)
-        .orElse {
-          case DropTable(table) => '{ "DROP TABLE " + ${ binary(table) } }
-          case CreateTable(table, Some(specs)) =>
-            val specStrings = specs.map {
-              case CreateSpec.ColDef(colName, tpe, mods) =>
-                val modStrings = mods.map {
-                  case ColMod.AutoInc() => '{ "AUTO_INCREMENT" }
-                  case ColMod.Default(v) =>
-                    '{ "DEFAULT " + ${ binary(Literal(v)) } }
-                  case ColMod.NotNull() => '{ "NOT NULL" }
-                  case ColMod.Unique()  => '{ "UNIQUE" }
-                }
-                '{
-                  ${ Expr(colName) } + " " + ${ typeString(tpe) } + ${
-                    Expr.ofList(modStrings)
-                  }.mkString(" ", " ", "")
-                }
-              case CreateSpec.PK(columns) =>
-                '{ "PRIMARY KEY (" + ${ Expr(columns.mkString(", ")) } + ")" }
-              case CreateSpec.FK(
-                    localCol,
-                    remoteTableName,
-                    remoteColName,
-                    onDelete
-                  ) =>
-                val onDeleteStr = onDelete match
-                  case OnDelete.Cascade    => '{ "CASCADE" }
-                  case OnDelete.Restrict   => '{ "RESTRICT" }
-                  case OnDelete.SetDefault => '{ "SET DEFAULT" }
-                  case OnDelete.SetNull    => '{ "SET NULL" }
-                '{
-                  "FOREIGN KEY (" + ${
-                    Expr(localCol)
-                  } + ") REFERENCES " + $remoteTableName + "(" + ${
-                    Expr(remoteColName)
-                  } + ") ON DELETE " + $onDeleteStr
-                }
-              case CreateSpec.Index(indices) =>
-                val indexStrings = indices.map {
-                  case (c, Order.Asc)  => '{ ${ Expr(c) } + " ASC" }
-                  case (c, Order.Desc) => '{ ${ Expr(c) } + " DESC" }
-                }
-                '{
-                  "INDEX (" + ${ Expr.ofList(indexStrings) }
-                    .mkString(", ") + ")"
-                }
-              case CreateSpec.Uniques(indices) =>
-                val compUniques = indices.map(Expr(_))
-                '{
-                  "UNIQUE (" + ${ Expr.ofList(compUniques) }
-                    .mkString(", ") + ")"
-                }
-            }
-
-            '{
-              "CREATE TABLE " + ${ binary(table) } + " (" + ${
-                Expr.ofList(specStrings)
-              }.mkString(", ") + ")"
-            }
-          case Select(
-                distinct,
-                columns,
-                from,
-                joins,
-                where,
-                groupBy,
-                orderBy,
-                offset,
-                limit
-              ) =>
-            val distinctWords = if distinct then List('{ "DISTINCT" }) else Nil
-            val columnsWords = List(binary(columns))
-            val fromWords = from match
-              case sub @ As(s: Select[_, _], name) =>
-                List('{ "(" + ${ binary(s) } + ")" }, '{ "AS" }, Expr(name))
-              case sub: Select[_, _] =>
-                List('{ "(" + ${ binary(from) } + ")" })
-              case i => List(binary(i))
-            val joinWords = joins.map { case (jt, src, on) =>
-              val jtStr = jt match
-                case JoinType.Inner => "INNER"
-                case JoinType.Left  => "LEFT"
-                case JoinType.Right => "RIGHT"
-                case JoinType.Full  => "FULL"
-                case JoinType.Cross => "CROSS"
-              List(
-                Expr(jtStr),
-                Expr("JOIN"),
-                binary(src),
-                Expr("ON"),
-                binary(on)
-              )
-            }.flatten
-            val whereWords = where.fold(Nil)(i => List('{ "WHERE" }, binary(i)))
-            val groupByWords = groupBy.fold(List.empty) { case (cs, h) =>
-              List(Expr("GROUP"), Expr("BY"), binary(cs)) ++ h
-                .map(binary)
-                .toList
-            }
-            val orderByWords = orderBy match
-              case Nil => Nil
-              case cs =>
-                val ord = cs.map {
-                  case (c, Order.Asc)  => '{ ${ binary(c) } + " ASC" }
-                  case (c, Order.Desc) => '{ ${ binary(c) } + " DESC" }
-                }
-                List(
-                  Expr("ORDER"),
-                  Expr("BY"),
-                  '{ ${ Expr.ofSeq(ord) }.mkString(", ") }
-                )
-            val limitWords =
-              limit.fold(List.empty)(l => List(Expr("LIMIT"), binary(l)))
-            val offsetWords =
-              offset.fold(List.empty)(o => List(Expr("OFFSET"), binary(o)))
-            val words =
-              List('{ "SELECT" }) ++ distinctWords ++ columnsWords ++ List('{
-                "FROM"
-              }) ++ fromWords ++ joinWords ++ whereWords ++ groupByWords ++ orderByWords ++ limitWords ++ offsetWords
-
-            '{ ${ Expr.ofList(words) }.mkString(" ") }
-          case Block(stmts) =>
-            '{
-              ${ Expr.ofSeq(stmts.map(binary)) }.map(q => s"$q;").mkString(" ")
-            }
-          case Star() => '{ "*" }
-          case Tuple(trees) =>
-            '{ ${ Expr.ofSeq(trees.map(binary)) }.mkString(", ") }
-          case As(tree, name) =>
-            '{ ${ binary(tree) } + " AS " + ${ Expr(name) } }
-          case Ref(name)       => Expr(name)
-          case Column(name)    => Expr(name)
-          case SelectCol(n, c) => '{ ${ binary(n) } + "." + ${ binary(c) } }
-          case Table(name, _)  => name
-          case Literal(value) =>
-            value.asExprOf[scala.Any] match
-              case '{ $o: Option[a] } =>
-                '{ $o.fold("NULL") { i => ${ binary(Literal('{ i })) } } }
-              case '{ $i: String } => '{ "\"" + $i + "\"" }
-              case v               => '{ $v.toString }
-          case FunApp(func, args, _) =>
-            val encodedArgs = args.map { a =>
-              a match
-                case Literal(_) | SelectCol(_, _) |
-                    FunApp(Func.Custom(_), _, _) | Star() =>
-                  binary(a)
-                case _ => '{ "(" + ${ binary(a) } + ")" }
-            }
-            (func, encodedArgs) match
-              case (Func.BuiltIn(Symbol.Eq), List(l, r)) =>
-                '{ $l + " = " + $r }
-              case (Func.BuiltIn(Symbol.Neq), List(l, r)) =>
-                '{ $l + " != " + $r }
-              case (Func.BuiltIn(Symbol.Plus), List(l, r)) =>
-                '{ $l + " + " + $r }
-              case (Func.BuiltIn(Symbol.Minus), List(l, r)) =>
-                '{ $l + " - " + $r }
-              case (Func.BuiltIn(Symbol.Plus), List(l)) =>
-                l
-              case (Func.BuiltIn(Symbol.Minus), List(l)) =>
-                '{ "-" + $l }
-              case (Func.BuiltIn(Symbol.Mult), List(l, r)) =>
-                '{ $l + " * " + $r }
-              case (Func.BuiltIn(Symbol.And), List(l, r)) =>
-                '{ $l + " AND " + $r }
-              case (Func.BuiltIn(Symbol.Or), List(l, r)) =>
-                '{ $l + " OR " + $r }
-              case (Func.BuiltIn(Symbol.Count), List(arg)) =>
-                '{ "COUNT(" + $arg + ")" }
-              case (Func.Custom(name), as) =>
-                '{
-                  ${ Expr(name) } + "(" + ${ Expr.ofSeq(as) }
-                    .mkString(", ") + ")"
-                }
-          case Cast(n, tpe) =>
-            '{ "CAST(" + ${ binary(n) } + " AS " + ${ typeString(tpe) } + ")" }
-        }(tree)
 
 class Context(
     val refMap: Map[Any, String] = Map.empty[Any, String]
@@ -355,11 +357,13 @@ class Context(
   def refName(using q: Quotes)(tree: q.reflect.Tree): String =
     refMap(tree)
 
-abstract class CompileModule[V, S[+X] <: Iterable[X]](using
+abstract class CompileModule[V, S[+X] <: Iterable[X]](
+    protected val nextName: () => String
+)(using
     override val q: Quotes,
     val tv: Type[V],
     val ts: Type[S]
-) extends JdbcCompilationFramework(using q):
+) extends JdbcCompilationFramework:
 
   import q.reflect.*
 
@@ -369,7 +373,7 @@ abstract class CompileModule[V, S[+X] <: Iterable[X]](using
   type Requirements = SchemaRequirements
   val require = new SchemaRequirements {}
 
-  def apply(
-      recurse: Context => Expr[Any] => Result[Node[Expr, Type]],
-      nameGen: () => String
-  )(ctx: Context): PartialFunction[Expr[Any], Result[Node[Expr, Type]]]
+  def comp(using
+      ctx: Context
+  ): PartialFunction[Expr[Any], Result[Node[Expr, Type]]] =
+    PartialFunction.empty

@@ -37,13 +37,10 @@ trait MemoryQueryContextProvider[R[_]]:
   given memoryQueryable[S[+X] <: Iterable[X]](using ifac: IterableFactoryWrapper[S]): Queryable[R, S] with {
     type Src[A] = Source[R, S, A]
 
-    extension(raw: Raw)
-      def typed[A]: A = notSupported()
-    extension[A](a: A)
-      def lift: Raw = notSupported()
+    protected def applyFun[T <: Tuple, B](name: String, args: T): B = notSupported()
 
     extension(sc: StringContext)
-      def native(s: Raw*): Raw = notSupported()
+      def native(s: Any*): Any = notSupported()
 
     extension [A](ma: Src[A])
       private inline def mapValues[B](f: S[A] => S[B]): Src[B] =

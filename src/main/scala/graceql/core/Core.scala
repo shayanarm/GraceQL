@@ -40,30 +40,27 @@ class Exe[R[_], N[+_], C, A](val compiled: N[A]):
   inline def asTry(using C): Try[A] = as[Try]
   inline def option(using C): Option[A] = as[Option]
   inline def either(using C): Either[Throwable, A] =
-    as[[x] =>> Either[Throwable, x]]
+    as[[x] =>> Either[Throwable, x]]  
 
+trait Api: 
+  self =>
 
-sealed trait Raw    
+  extension (sc: StringContext) def native(s: Any*): Any
+  
+  protected def applyFun[T <: Tuple, B](name: String, args: T): B
+  
+  object func:
 
-trait Api:
-  extension (bin: Raw)
-    def typed[A]: A
-
-  extension [A](a: A) def lift: Raw
-  extension (sc: StringContext) def native(s: Raw*): Raw
-
-  object function:
-
-    inline def nullary[A](inline f: Raw): () => A = 
-      () => f.typed[A]
-    inline def unary[A, B](inline f: Raw => Raw): A => B = 
-      a => f(a.lift).typed[B]
-    inline def binary[A1, A2, B](inline f: (Raw, Raw) => Raw): (A1, A2) => B = 
-      (a1, a2) => f(a1.lift, a2.lift).typed[B]
-    inline def ternary[A1, A2, A3, B](inline f: (Raw, Raw, Raw) => Raw): (A1, A2, A3) => B =
-      (a1, a2, a3) => f(a1.lift, a2.lift, a3.lift).typed[B]
-    inline def quarternary[A1, A2, A3, A4, B](inline f: (Raw, Raw, Raw, Raw) => Raw): (A1, A2, A3, A4) => B =
-      (a1, a2, a3, a4) => f(a1.lift, a2.lift, a3.lift, a4.lift).typed[B]
+    inline def nullary[B](inline name: String): () => B = 
+      () => applyFun[EmptyTuple, B](name, EmptyTuple)
+    inline def unary[A, B](inline name: String): A => B = 
+      a => applyFun[A *: EmptyTuple, B](name, a *: EmptyTuple)
+    inline def binary[A1, A2, B](inline name: String): (A1, A2) => B = 
+      (a1, a2) => applyFun[(A1, A2), B](name, a1 *: a2 *: EmptyTuple)
+    inline def ternary[A1, A2, A3, B](inline name: String): (A1, A2, A3) => B =
+      (a1, a2, a3) => applyFun[(A1, A2, A3), B](name, a1 *: a2 *: a3 *: EmptyTuple)
+    inline def quarternary[A1, A2, A3, A4, B](inline name: String): (A1, A2, A3, A4) => B =
+      (a1, a2, a3, a4) => applyFun[(A1, A2, A3, A4), B](name, a1 *: a2 *: a3 *: a4 *: EmptyTuple)
 
 trait Queryable[R[_], M[_]]
     extends Relational[[x] =>> Source[R, M, x]]
