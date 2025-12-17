@@ -15,8 +15,8 @@ trait CompilationFramework(using val q: Quotes) {
 
   final type Result[+A] = Validated[String, A]
 
-  extension (tpe: Type[_])
-    def no: Type[_] =
+  extension (tpe: Type[?])
+    def no: Type[?] =
       tpe match
         case '[Option[a]] => Type.of[a]
         case _            => tpe

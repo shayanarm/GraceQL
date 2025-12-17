@@ -1,6 +1,6 @@
 name := "GraceQL"
 version := "0.1.0"
-scalaVersion := "3.1.3"
+scalaVersion := "3.7.4"
 
 libraryDependencies ++= Seq(
     // "org.scala-lang" %% "scala3-staging" % scalaVersion.value,

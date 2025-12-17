@@ -41,7 +41,7 @@ trait NativeSyntaxSupport[V, S[+X] <: Iterable[X]] extends CompileModule[V, S]:
       case '{
             ($c: Q).native($sc: StringContext)(${
               Varargs(args)
-            }: _*)
+            }*)
           } =>
         for 
           nativeArgs <- args.traverse(comp)
@@ -54,9 +54,9 @@ trait NativeSyntaxSupport[V, S[+X] <: Iterable[X]] extends CompileModule[V, S]:
   )(sce: Expr[StringContext]): Result[Node[Expr, Type]] =
     import q.reflect.*
     val sc = sce match
-      case '{ StringContext(${ Varargs(Exprs(parts)) }: _*) } =>
+      case '{ StringContext(${ Varargs(Exprs(parts)) }*) } =>
         StringContext(parts*)
-      case '{ new StringContext(${ Varargs(Exprs(parts)) }: _*) } =>
+      case '{ new StringContext(${ Varargs(Exprs(parts)) }*) } =>
         StringContext(parts*)
     Node.Raw(sc, args.toList).pure
     

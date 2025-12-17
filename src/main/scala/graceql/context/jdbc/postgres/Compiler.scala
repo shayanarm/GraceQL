@@ -59,7 +59,7 @@ object Compiler extends VendorTreeCompiler[PostgreSql]:
             val orderStr = o match
               case Order.Asc => "ASC"
               case _         => "DESC"
-            val Table(tname, _) = table
+            val Table(tname, _) = table: @unchecked
             '{
               "CREATE INDEX " + ${ tname } + "_" + ${ Expr(c) } + "_" + ${
                 Expr(orderStr)
@@ -78,7 +78,7 @@ object Compiler extends VendorTreeCompiler[PostgreSql]:
       case _ => super.binary(tree)  
     }
 
-  def serialColumnType(using q: Quotes)(tpe: Type[_]): Expr[String] =
+  def serialColumnType(using q: Quotes)(tpe: Type[?]): Expr[String] =
     tpe match
       case '[Int] => '{ "SERIAL" }
   def typeString[A](using q: Quotes)(tpe: Type[A]): Expr[String] =

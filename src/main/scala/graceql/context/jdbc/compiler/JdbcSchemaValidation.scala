@@ -8,7 +8,7 @@ import graceql.syntax.*
 import graceql.data.{Validated, ~}
 import graceql.quoted.CompilationFramework
 
-trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFramework {
+trait JdbcSchemaValidation(using Quotes) extends CompilationFramework {
   self =>
   import q.reflect.*
   import Validated.*
@@ -16,7 +16,7 @@ trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFram
   case class Schema[A](
       name: String,
       compositeUniqueKey: List[String],
-      fieldSpecs: List[FieldSpec[_]]
+      fieldSpecs: List[FieldSpec[?]]
   ):
     def forAst: List[CreateSpec[Expr, Type]] =
       val renamedUniques = compositeUniqueKey
@@ -43,8 +43,8 @@ trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFram
       val v2 =
         for
           sch <- tableSchema[A]
-          schema(tname, uniques*) = sch
-          _ ~ fieldSpecs <- {
+          schema(tname, uniques*) = sch: @unchecked
+          case _ ~ fieldSpecs <- {
             val nameCheck =
               if !tname.isBlank then pass[Result]
               else "Schema name cannot be blank".err
@@ -69,7 +69,7 @@ trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFram
   case class FieldSpec[A](
       name: String,
       tpe: Type[A],
-      mirrorType: Type[_],
+      mirrorType: Type[?],
       mods: List[modifier],
       default: Option[Expr[A]]
   ):
@@ -81,7 +81,7 @@ trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFram
   object FieldSpec:
     def forField[A](name: String)(using
         Type[A]
-    ): Result[FieldSpec[_ <: Any]] =
+    ): Result[FieldSpec[? <: Any]] =
       val trep = TypeRepr.of[A]
       val caseFields = trep.typeSymbol.caseFields
       val companion = trep.typeSymbol.companionClass
@@ -122,7 +122,7 @@ trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFram
               annotationFor[autoinc](s),
               annotationFor[unique](s),
               annotationFor[index](s)
-            ).sequence map (_.flatten)
+            ).sequence.map(_.flatten)
 
             v1 ~ v2 ~ v3 ^^ { case _ ~ mtpe ~ mods =>
               FieldSpec[t](s.name, Type.of[t], mtpe, mods.toList, default)
@@ -168,7 +168,7 @@ trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFram
 
     def allOf[A](using
         Type[A]
-    ): Result[List[FieldSpec[_ <: Any]]] =
+    ): Result[List[FieldSpec[? <: Any]]] =
       val es =
         TypeRepr.of[A].typeSymbol.caseFields.map(cf => forField[A](cf.name))
       for
@@ -182,7 +182,7 @@ trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFram
           .asErrors(())
       yield specs.toList
 
-    def forAst(specs: List[FieldSpec[_]]): List[CreateSpec[Expr, Type]] =
+    def forAst(specs: List[FieldSpec[?]]): List[CreateSpec[Expr, Type]] =
       val colDefs = specs.map {
         case fs @ FieldSpec(_, tpe, mtpe, mods, default) =>
           val astDefault = default.map(ColMod.Default(_))
@@ -299,10 +299,10 @@ trait JdbcSchemaValidation(using override val q: Quotes) extends CompilationFram
 
     inline def tableName[T](using Type[T]): String = tableSchema[T].name
 
-    def fieldSpecs[T](using Type[T]): List[FieldSpec[_]] =
+    def fieldSpecs[T](using Type[T]): List[FieldSpec[?]] =
       apply(FieldSpec.allOf[T])(s"Error obtaining field information for type ${Type.show[T]}")
 
-    def fieldSpec[T](name: String)(using Type[T]): FieldSpec[_] =
+    def fieldSpec[T](name: String)(using Type[T]): FieldSpec[?] =
       apply(FieldSpec.forField[T](name))(s"Error obtaining field information for type ${Type.show[T]}")
   
   type Requirements <: SchemaRequirements

@@ -3,6 +3,7 @@ package graceql.context.jdbc
 import graceql.core.*
 import java.sql.{Connection => JConnection, ResultSet}
 import java.sql.PreparedStatement
+import scala.collection.View.Empty
 
 final case class Table[V, +A]()
 
@@ -16,13 +17,13 @@ object Table:
             val stmt = conn.createStatement()
             p(stmt.executeQuery(q))
           case DBIO.Update(s) =>
-            val stmt = conn.createStatement()            
+            val stmt = conn.createStatement()
             stmt.executeUpdate(s)
           case DBIO.Statement(s) =>
-            val stmt = conn.createStatement()            
+            val stmt = conn.createStatement()
             stmt.execute(s)
             ()
-          case DBIO.Pure(run) => run() 
+          case DBIO.Pure(run) => run()
       catch case e => throw GraceException(e.getMessage, e)
 
 enum DBIO[+A]:
@@ -31,16 +32,16 @@ enum DBIO[+A]:
   case Statement(val stmt: String) extends DBIO[Unit]
   case Pure[A](val run: () => A) extends DBIO[A]
   def executableStmt: Option[String] = this match
-    case Query(q,_) => Some(q)
-    case Update(s) => Some(s)
+    case Query(q, _)  => Some(q)
+    case Update(s)    => Some(s)
     case Statement(s) => Some(s)
-    case Pure(_) => None
-    
+    case Pure(_)      => None
+
   override def toString() = this match
-    case Query(q,_) => s"Serialized($q)"
-    case Update(s) => s"Serialized($s)"
+    case Query(q, _)  => s"Serialized($q)"
+    case Update(s)    => s"Serialized($s)"
     case Statement(s) => s"Serialized($s)"
-    case Pure(run) => run.toString() // Not to be evaluated
+    case Pure(run)    => run.toString() // Not to be evaluated
 
 object DBIO:
   def query[A](query: String, parse: ResultSet => A): DBIO[A] =
@@ -57,15 +58,16 @@ trait JdbcQueryContext[V, S[+X] <: Iterable[X]]
 
   final type Connection = JConnection
 
+trait SqlType(val sqlName: String)
 
-trait SqlColumnType[V, T]: 
-  val name: String
-  def read(rs: ResultSet, idx: Int): T
-  def write(stmt: PreparedStatement, idx: Int, value: T): Unit
-
-
-object SqlColumnType:
-  given mapped[V, A, B](using ev: SqlMapped[A, B], ta: SqlColumnType[V, A]): SqlColumnType[V, B] with
-    val name = ta.name
-    def read(rs: ResultSet, idx: Int): B = ev.from(ta.read(rs, idx))
-    def write(stmt: PreparedStatement, idx: Int, value: B): Unit = ta.write(stmt, idx, ev.to(value))
+trait JdbcCodec[V, T: SqlBase]:
+  type EncodableAs
+  type Default <: EncodableAs & SqlType
+  def default: Default
+  def read[E <: EncodableAs & SqlType](rs: ResultSet, idx: Int, encoding: E): T
+  def write[E <: EncodableAs & SqlType](
+      stmt: PreparedStatement,
+      idx: Int,
+      value: T,
+      encoding: E
+  ): Unit

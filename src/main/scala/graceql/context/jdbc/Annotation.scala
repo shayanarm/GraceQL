@@ -15,7 +15,7 @@ object pk:
 
 @field
 case class fk(
-    table: Class[_] | Type[_],
+    table: Class[?] | Type[?],
     column: String,
     onDelete: compiler.OnDelete = compiler.OnDelete.Cascade
 ) extends modifier
@@ -23,7 +23,7 @@ object fk:
   given FromExpr[fk] with
     def unapply(expr: Expr[fk])(using q: Quotes): Option[fk] =
       import q.reflect.*
-      inline def targetType(e: Expr[Class[_] | Type[_]]): Type[_] =
+      inline def targetType(e: Expr[Class[?] | Type[?]]): Type[?] =
         e match
           case '{$x: Class[a]} => Type.of[a]
           case _ =>
@@ -44,14 +44,14 @@ object fk:
 
 @field
 case class sqlType(
-    vendor: Class[_] | Type[_],
+    vendor: Class[?] | Type[?],
     colType: String,
 ) extends modifier
 object sqlType:
   given FromExpr[fk] with
     def unapply(expr: Expr[fk])(using q: Quotes): Option[fk] =
       import q.reflect.*
-      inline def targetType(e: Expr[Class[_] | Type[_]]): Type[_] =
+      inline def targetType(e: Expr[Class[?] | Type[?]]): Type[?] =
         e match
           case '{$x: Class[a]} => Type.of[a]
           case _ =>
@@ -119,13 +119,13 @@ object schema:
         case '{
               new graceql.context.jdbc.schema(
                 ${ Expr(value) },
-                ${ Varargs(Exprs(uniques)) }: _*
+                ${ Varargs(Exprs(uniques)) }*
               )
             } =>
           Some(schema(value, uniques*))
         case '{
               graceql.context.jdbc
-                .schema(${ Expr(value) }, ${ Varargs(Exprs(uniques)) }: _*)
+                .schema(${ Expr(value) }, ${ Varargs(Exprs(uniques)) }*)
             } =>
           Some(schema(value, uniques*))
         case '{ new graceql.context.jdbc.schema(${ Expr(value) }) } =>

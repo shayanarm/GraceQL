@@ -5,10 +5,10 @@ case class Kleisli[M[_]: Monad, A, B](run: A => M[B]):
         Kleisli(c => k.run(c).flatMap(this.run))    
 
     inline def andThen[C](k: Kleisli[M, B, C]): Kleisli[M, A, C] = 
-        k compose this    
+        k `compose` this    
     
     inline def <#[C](k: Kleisli[M, C, A]): Kleisli[M, C, B] = 
-        this compose k
+        this `compose` k
 
     inline def #>[C](k: Kleisli[M, B, C]): Kleisli[M, A, C] = 
         k <# this

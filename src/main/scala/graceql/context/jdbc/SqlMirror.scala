@@ -23,7 +23,7 @@ abstract class SqlEncoding[A, E <: Encodings]:
   final type Encoding = E
 
 object SqlEncoding:
-  type Of[A] = SqlEncoding[A, _]
+  type Of[A] = SqlEncoding[A, ?]
   // given jsonArraySeq[A](using ta: SqlEncoding[A])(using ev: ta.Encoding <:< Column): SqlJsonArray[Seq, A] = SqlJsonArray(Seq)
   // given jsonArrayIndexedSeq[A](using ta: SqlEncoding[A])(using ev: ta.Encoding <:< Column): SqlJsonArray[IndexedSeq, A] = SqlJsonArray(IndexedSeq)
   // given jsonArrayList[A](using ta: SqlEncoding[A])(using ev: ta.Encoding <:< Column): SqlJsonArray[List, A] = SqlJsonArray(List)
@@ -50,27 +50,27 @@ object SqlEncoding:
 abstract class SqlBase[A] extends SqlEncoding[A, Base]
 object SqlBase
 
-trait SqlMapped[A, B](using ta: SqlEncoding[A, _], ev: ta.Encoding <:< Column) extends SqlEncoding[A, Mapped]:
+trait SqlMapped[A, B](using ta: SqlEncoding[A, ?], ev: ta.Encoding <:< Column) extends SqlEncoding[A, Mapped]:
   final type From = A
   def from(a: A): B
   def to(b: B): A
 
 object SqlMapped:
-  type To[B] = SqlMapped[_, B]
+  type To[B] = SqlMapped[?, B]
 
 abstract class SqlValueClass[O <: Product] extends SqlEncoding[O, ValueClass] {
   type Inner
   protected val m: Mirror.ProductOf[O] {type MirroredElemTypes = Inner *: EmptyTuple}
-  protected val ev: SqlEncoding[Inner,_]#Encoding <:< Column
+  protected val ev: SqlEncoding[Inner, ?]#Encoding <:< Column
   final def unbox(o: O): Inner = Tuple.fromProductTyped(o)(using m).productElement(0).asInstanceOf[Inner]
   final def box(i: Inner): O = m.fromProduct(Tuple(i))
 }
 
 object SqlValueClass:
-  given derived[O <: Product, I, E <: Encodings](using _m: Mirror.ProductOf[O] {type MirroredElemTypes = I *: EmptyTuple}, repi: SqlEncoding[I, _], ev0: repi.Encoding <:< Column): SqlValueClass[O] with {
+  given derived[O <: Product, I, E <: Encodings](using _m: Mirror.ProductOf[O] {type MirroredElemTypes = I *: EmptyTuple}, repi: SqlEncoding[I, ?], ev0: repi.Encoding <:< Column): SqlValueClass[O] with {
     type Inner = I
     val m = _m
-    val ev: SqlEncoding[Inner,_]#Encoding <:< Column = ev0.asInstanceOf[SqlEncoding[Inner,_]#Encoding <:< Column]
+    val ev: SqlEncoding[Inner,?]#Encoding <:< Column = ev0.asInstanceOf[SqlEncoding[Inner,?]#Encoding <:< Column]
   }
   
 abstract class SqlRow[A <: Product](using ev: Mirror.ProductOf[A]) extends SqlEncoding[A, Row]
@@ -139,7 +139,7 @@ trait SqlMirror[A, M]:
       Try { listToMirror(r) }.toOption.map(m => (self.from(m),m))
 
 object SqlMirror:
-  type Of[A] = SqlMirror[A, _]
+  type Of[A] = SqlMirror[A, ?]
 
   protected type MapTo[X,F[_]] = X match
     case Tuple => Tuple.Map[X, F]

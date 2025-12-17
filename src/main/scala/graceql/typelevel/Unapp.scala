@@ -7,7 +7,7 @@ trait Unapp[T, A, M[_]](val ev: T =:= M[A]) {
 }
 
 object Unapp extends UnappPriority4:
-  type Of[T, A] = Unapp[T, A, _]
+  type Of[T, A] = Unapp[T, A, ?]
 
   def apply[T, A, M[_]](ev: T =:= M[A]) = new Unapp[T, A, M](ev) {}
   given id[A]: Unapp[A, A, [x] =>> x] = Unapp(summon[A =:= A])

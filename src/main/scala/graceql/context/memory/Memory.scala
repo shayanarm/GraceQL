@@ -63,7 +63,7 @@ trait MemoryQueryContextProvider[R[_]]:
       def filter(pred: A => Boolean): Src[A] = ma.mapValues(vs => ifac.from(vs.filter(pred)))
 
       def withFilter(pred: A => Boolean): scala.collection.WithFilter[A, Src] =
-        val iterOps = new scala.collection.IterableOps[A,Src,Src[A]] { io =>
+        val iterOps: scala.collection.IterableOps[A,Src,Src[A]] = new scala.collection.IterableOps[A,Src,Src[A]] { io =>
           def iterator = ma.withValues(_.iterator)
           def coll = ma
           protected def fromSpecific(coll: IterableOnce[A @scala.annotation.unchecked.uncheckedVariance]): Src[A] =

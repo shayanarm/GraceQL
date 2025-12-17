@@ -241,11 +241,10 @@ trait VendorTreeCompiler[V]:
 
   def typeString[A](using q: Quotes)(tpe: Type[A]): Expr[String]
 
-  class CompilerDelegate[S[+X] <: Iterable[X]](using
-      override val q: Quotes,
+  class CompilerDelegate[S[+X] <: Iterable[X]](using Quotes)(using
       tv: Type[V],
       ts: Type[S]
-  ) extends JdbcCompilationFramework(using q):
+  ) extends JdbcCompilationFramework:
     import TreeOps.*
     import q.reflect.{
       Tree => _,
@@ -359,8 +358,7 @@ class Context(
 
 abstract class CompileModule[V, S[+X] <: Iterable[X]](
     protected val nextName: () => String
-)(using
-    override val q: Quotes,
+)(using Quotes)(using
     val tv: Type[V],
     val ts: Type[S]
 ) extends JdbcCompilationFramework:
